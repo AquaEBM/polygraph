@@ -1,6 +1,6 @@
-mod agio;
-use agio::AudioGraphIO;
-pub use agio::{NodeIO, Ports};
+mod io;
+use io::AudioGraphIO;
+pub use io::{NodeIO, Ports};
 
 mod buffer_allocator;
 use scheduler::Scheduler;
