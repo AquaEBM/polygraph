@@ -14,19 +14,19 @@ fn insert_at_next_empty_slot<T>(vec: &mut StableVec<T>, item: T) -> usize {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub(super) struct Ports(HashMap<NodeIndex, HashSet<usize>>);
+pub struct Ports(HashMap<NodeIndex, HashSet<usize>>);
 
 impl Ports {
 
-    pub(super) fn is_empty(&self) -> bool {
-        self.0.values().all(HashSet::is_empty)
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
-    pub(super) fn iter_nodes(&self) -> impl Iterator<Item = &NodeIndex> {
+    pub fn iter_nodes(&self) -> impl Iterator<Item = &NodeIndex> {
         self.0.keys()
     }
 
-    pub(super) fn iter_ports<'a>(&'a self) -> impl Iterator<Item = Port> + 'a {
+    pub fn iter_ports<'a>(&'a self) -> impl Iterator<Item = Port> + 'a {
         self.0
             .iter()
             .map(|(&node_index, port_idxs)| {
@@ -44,7 +44,7 @@ impl Ports {
             .insert(index)
     }
 
-    pub(super) fn remove_port(&mut self, Port { index, node_index }: &Port) -> bool {
+    pub fn remove_port(&mut self, Port { index, node_index }: &Port) -> bool {
         if let Some(port_idxs) = self.0.get_mut(node_index) {
 
             // (0w0) Oooh? Since when was the borrow checker this smart?
@@ -59,7 +59,7 @@ impl Ports {
         }
     }
 
-    pub(super) fn remove_all_ports_to_node(
+    pub fn remove_all_ports_to_node(
         &mut self,
         node_index: &NodeIndex,
     ) -> Option<HashSet<usize>> {
@@ -68,20 +68,20 @@ impl Ports {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct Interface {
+pub struct NodeIO {
     ports: Box<[Ports]>,
     num_opposite_ports: usize,
 }
 
-impl Interface {
-    fn with_io_config(num_ports: usize, num_opposite_ports: usize) -> Self {
+impl NodeIO {
+    pub(super) fn with_io_config(num_ports: usize, num_opposite_ports: usize) -> Self {
         Self {
             ports: iter::repeat_with(Ports::default).take(num_ports).collect(),
             num_opposite_ports,
         }
     }
 
-    fn with_opposite_config(&self) -> Self {
+    pub(super) fn with_opposite_config(&self) -> Self {
         Self::with_io_config(self.num_opposite_ports(), self.ports().len())
     }
 
@@ -89,12 +89,24 @@ impl Interface {
         self.num_opposite_ports
     }
 
+    pub fn num_outputs(&self) -> usize {
+        self.num_opposite_ports()
+    }
+
     pub(super) fn ports(&self) -> &[Ports] {
         self.ports.as_ref()
     }
 
+    pub fn inputs(&self) -> &[Ports] {
+        self.ports()
+    }
+
     pub(super) fn ports_mut(&mut self) -> &mut [Ports] {
         self.ports.as_mut()
+    }
+
+    pub fn inputs_mut(&mut self) -> &mut [Ports] {
+        self.ports_mut()
     }
 
     pub(super) fn get_connections(&self, index: usize) -> Option<&Ports> {
@@ -108,8 +120,8 @@ impl Interface {
 
 #[derive(Debug, Clone)]
 pub(super) struct AudioGraphIO {
-    processors: StableVec<Interface>,
-    global: Interface,
+    processors: StableVec<NodeIO>,
+    global: NodeIO,
 }
 
 impl AudioGraphIO {
@@ -119,7 +131,7 @@ impl AudioGraphIO {
     ) -> Self {
         Self {
             processors: StableVec::default(),
-            global: Interface::with_io_config(num_opposite_global_io_ports, num_global_io_ports),
+            global: NodeIO::with_io_config(num_opposite_global_io_ports, num_global_io_ports),
         }
     }
 
@@ -135,14 +147,22 @@ impl AudioGraphIO {
         }
     }
 
-    pub(super) fn get_node(&self, index: NodeIndex) -> Option<&Interface> {
+    pub(super) fn iter_processor_io(&self) -> impl Iterator<Item = (usize, &NodeIO)> {
+        self.processors.iter()
+    }
+
+    pub(super) fn iter_mut_processor_io(&mut self) -> impl Iterator<Item = (usize, &mut NodeIO)> {
+        self.processors.iter_mut()
+    }
+
+    pub(super) fn get_node(&self, index: NodeIndex) -> Option<&NodeIO> {
         match index {
             NodeIndex::Global => Some(&self.global),
             NodeIndex::Processor(i) => self.processors.get(i),
         }
     }
 
-    pub(super) fn get_node_mut(&mut self, index: NodeIndex) -> Option<&mut Interface> {
+    pub(super) fn get_node_mut(&mut self, index: NodeIndex) -> Option<&mut NodeIO> {
         match index {
             NodeIndex::Global => Some(&mut self.global),
             NodeIndex::Processor(i) => self.processors.get_mut(i),
@@ -188,7 +208,7 @@ impl AudioGraphIO {
     ) -> usize {
         insert_at_next_empty_slot(
             &mut self.processors,
-            Interface::with_io_config(num_ports, num_opposite_ports),
+            NodeIO::with_io_config(num_ports, num_opposite_ports),
         )
     }
 
@@ -286,7 +306,7 @@ impl AudioGraphIO {
 }
 
 impl Index<NodeIndex> for AudioGraphIO {
-    type Output = Interface;
+    type Output = NodeIO;
 
     fn index(&self, index: NodeIndex) -> &Self::Output {
         self.get_node(index).unwrap()

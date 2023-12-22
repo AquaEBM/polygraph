@@ -1,5 +1,6 @@
 mod agio;
 use agio::AudioGraphIO;
+pub use agio::{NodeIO, Ports};
 
 mod buffer_allocator;
 use scheduler::Scheduler;
@@ -177,5 +178,21 @@ impl AudioGraph {
 
     pub fn compile(&self) -> Vec<ProcessTask> {
         self.get_scheduler().compile()
+    }
+
+    pub fn get_io(&self, index: NodeIndex) -> Option<&NodeIO> {
+        self.transposed.get_node(index)
+    }
+
+    pub fn get_io_mut(&mut self, index: NodeIndex) -> Option<&mut NodeIO> {
+       self.transposed.get_node_mut(index)
+    }
+
+    pub fn iter_processor_io(&self) -> impl Iterator<Item = (usize, &NodeIO)> {
+        self.transposed.iter_processor_io()
+    }
+
+    pub fn iter_mut_processor_io(&mut self) -> impl Iterator<Item = (usize, &mut NodeIO)> {
+        self.transposed.iter_mut_processor_io()
     }
 }
