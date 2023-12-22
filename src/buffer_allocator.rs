@@ -1,9 +1,11 @@
+use crate::agio::Ports;
+
 use super::*;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct BufferAllocator {
     claims: HashMap<Port, BufferIndex>,
-    ports: HashMap<OutputBufferIndex, HashSet<Port>>,
+    ports: HashMap<OutputBufferIndex, Ports>,
     free_buffers: HashSet<OutputBufferIndex>,
     num_intermediate_buffers: usize,
 }
@@ -13,7 +15,7 @@ impl BufferAllocator {
         Self::default()
     }
 
-    pub(super) fn free_buffer(&mut self, port: Port) -> Option<BufferIndex> {
+    pub(super) fn free_buffer(&mut self, port: &Port) -> Option<BufferIndex> {
         let buf_index = self.claims.remove(&port);
 
         if let Some(buf) = buf_index {
@@ -23,16 +25,16 @@ impl BufferAllocator {
         buf_index
     }
 
-    fn remove_reservation(&mut self, buf: OutputBufferIndex, port: Port) {
+    fn remove_reservation(&mut self, buf: OutputBufferIndex, port: &Port) {
         let ports = self.ports.get_mut(&buf).unwrap();
-        assert!(ports.remove(&port));
+        assert!(ports.remove_port(port));
         if ports.is_empty() {
             self.ports.remove(&buf);
             assert!(self.free_buffers.insert(buf));
         }
     }
 
-    fn try_remove_reservation(&mut self, buf: BufferIndex, port: Port) {
+    fn try_remove_reservation(&mut self, buf: BufferIndex, port: &Port) {
         if let BufferIndex::Output(output_buf) = buf {
             self.remove_reservation(output_buf, port)
         }
@@ -40,7 +42,7 @@ impl BufferAllocator {
 
     pub(super) fn reserve_free_buffer(
         &mut self,
-        ports: HashSet<Port>,
+        ports: Ports,
     ) -> Option<OutputBufferIndex> {
         if !ports.is_empty() {
             let buf = if let Some(buf) = self.free_buffers.iter().next().copied() {
@@ -65,11 +67,11 @@ impl BufferAllocator {
         buffer: BufferIndex,
         port: Port,
     ) -> Option<(BufferIndex, OutputBufferIndex)> {
-        if let Some(buf) = self.free_buffer(port) {
-            self.try_remove_reservation(buffer, port);
+        if let Some(buf) = self.free_buffer(&port) {
+            self.try_remove_reservation(buffer, &port);
 
-            let mut port_singleton = HashSet::default();
-            port_singleton.insert(port);
+            let mut port_singleton = Ports::default();
+            port_singleton.insert_port(port);
 
             let new_buf = self.reserve_free_buffer(port_singleton).unwrap();
 

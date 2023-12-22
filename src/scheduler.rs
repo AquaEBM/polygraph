@@ -38,7 +38,7 @@ impl Scheduler {
             let inputs = self
                 .outputs
                 .opposite_port_indices(node_index)
-                .map(|port| buffer_allocator.free_buffer(port))
+                .map(|port| buffer_allocator.free_buffer(&port))
                 .collect();
 
             let outputs: Box<[_]> = self.outputs[node_index]
@@ -74,8 +74,8 @@ impl Scheduler {
             .filter_map(|(buf_idx, ports)| buf_idx.map(|idx| (idx, ports)))
             .for_each(|(buffer, ports)| {
                 ports
-                    .iter()
-                    .filter_map(|&port| buffer_allocator.insert_claim(buffer, port))
+                    .iter_ports()
+                    .filter_map(|port| buffer_allocator.insert_claim(buffer, port))
                     .for_each(|(prev_claim, new_output)| {
                         final_schedule.push(ProcessTask::Add {
                             left_input: buffer,
@@ -100,7 +100,7 @@ impl Scheduler {
         for port in self.outputs.opposite_port_indices(NodeIndex::Global) {
             let this_port_idx = port.index;
 
-            if let Some(buf) = buf_allocator.free_buffer(port) {
+            if let Some(buf) = buf_allocator.free_buffer(&port) {
                 match buf {
                     BufferIndex::GlobalInput(_i) => {
                         buffer_copies
@@ -124,6 +124,8 @@ impl Scheduler {
                 }
             }
         }
+
+        println!("{final_schedule:#?}");
 
         final_schedule
             .iter_mut()

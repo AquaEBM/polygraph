@@ -13,7 +13,59 @@ fn insert_at_next_empty_slot<T>(vec: &mut StableVec<T>, item: T) -> usize {
     }
 }
 
-type Ports = HashSet<Port>;
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub(super) struct Ports(HashMap<NodeIndex, HashSet<usize>>);
+
+impl Ports {
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.0.values().all(HashSet::is_empty)
+    }
+
+    pub(super) fn iter_nodes(&self) -> impl Iterator<Item = &NodeIndex> {
+        self.0.keys()
+    }
+
+    pub(super) fn iter_ports<'a>(&'a self) -> impl Iterator<Item = Port> + 'a {
+        self.0
+            .iter()
+            .map(|(&node_index, port_idxs)| {
+                port_idxs
+                    .iter()
+                    .map(move |&index| Port { index, node_index })
+            })
+            .flatten()
+    }
+
+    pub(super) fn insert_port(&mut self, Port { index, node_index }: Port) -> bool {
+        self.0
+            .entry(node_index)
+            .or_insert_with(HashSet::default)
+            .insert(index)
+    }
+
+    pub(super) fn remove_port(&mut self, Port { index, node_index }: &Port) -> bool {
+        if let Some(port_idxs) = self.0.get_mut(node_index) {
+
+            // (0w0) Oooh? Since when was the borrow checker this smart?
+            if port_idxs.len() == 1 {
+                self.0.remove(node_index);
+                true
+            } else {
+                port_idxs.remove(index)
+            }
+        } else {
+            false
+        }
+    }
+
+    pub(super) fn remove_all_ports_to_node(
+        &mut self,
+        node_index: &NodeIndex,
+    ) -> Option<HashSet<usize>> {
+        self.0.remove(node_index)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(super) struct Interface {
@@ -124,8 +176,8 @@ impl AudioGraphIO {
 
         self[from_node].ports().iter().any(|ports| {
             ports
-                .iter()
-                .any(|port| self.connected(port.node_index, to_node, visited))
+                .iter_nodes()
+                .any(|&node| self.connected(node, to_node, visited))
         })
     }
 
@@ -141,14 +193,16 @@ impl AudioGraphIO {
     }
 
     pub(super) fn remove_processor(&mut self, index: usize) -> bool {
-
-        self.processors.remove(index).map(|_proc| {
-            for interface in self.processors.values_mut() {
-                for ports in interface.ports_mut() {
-                    ports.retain(|port| port.node_index != NodeIndex::Processor(index));
+        self.processors
+            .remove(index)
+            .map(|_proc| {
+                for interface in self.processors.values_mut() {
+                    for ports in interface.ports_mut() {
+                        ports.remove_all_ports_to_node(&NodeIndex::Processor(index));
+                    }
                 }
-            }
-        }).is_some()
+            })
+            .is_some()
     }
 
     pub(super) fn remove_edge(&mut self, from: Port, to: Port) -> Result<bool, EdgeNotFound> {
@@ -162,7 +216,7 @@ impl AudioGraphIO {
         };
 
         if error.is_not_error() {
-            Ok(self.get_connections_mut(from).unwrap().remove(&to))
+            Ok(self.get_connections_mut(from).unwrap().remove_port(&to))
         } else {
             Err(error)
         }
@@ -184,8 +238,8 @@ impl AudioGraphIO {
     ) {
         for (i, incoming_ports) in inputs[node_index].ports().iter().enumerate() {
             let this_port = Port::new(i, node_index);
-            for &port in incoming_ports.iter() {
-                self[port].insert(this_port);
+            for port in incoming_ports.iter_ports() {
+                self[port].insert_port(this_port);
 
                 let next_idx = port.node_index;
 
@@ -224,7 +278,7 @@ impl AudioGraphIO {
                 }
             }
 
-            Ok(self[from].insert(to))
+            Ok(self[from].insert_port(to))
         } else {
             Err(EdgeInsertError::NotFound(error))
         }
