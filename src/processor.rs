@@ -108,14 +108,9 @@ where
                 ProcessTask::Copy { input, outputs } => {
                     let input = buffer_handle.get_input_buffer(*input).unwrap();
 
-                    for &output in outputs.iter() {
-                        for (input, output) in input
-                            .iter()
-                            .zip(buffer_handle.get_output_buffer(output).unwrap().iter())
-                        {
-                            output.set(input.get())
-                        }
-                    }
+                    outputs.iter().for_each(|&index| {
+                        buffer_handle.get_output_buffer(index).unwrap().copy(input)
+                    })
                 }
 
                 ProcessTask::Process {

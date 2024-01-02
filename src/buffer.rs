@@ -43,6 +43,15 @@ impl<'a, T> OutputBuffer<'a, T> {
             output.set(left.get() + right.get())
         }
     }
+
+    pub fn copy(&self, other: InputBuffer<'a, T>)
+    where
+        T: Copy,
+    {
+        for (output, input) in self.iter().zip(other.iter()) {
+            output.set(input.get())
+        }
+    }
 }
 
 impl<'a, T> Output<'a, T> {
