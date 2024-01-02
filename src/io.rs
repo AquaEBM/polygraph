@@ -17,7 +17,6 @@ fn insert_at_next_empty_slot<T>(vec: &mut StableVec<T>, item: T) -> usize {
 pub struct Ports(HashMap<NodeIndex, HashSet<usize>>);
 
 impl Ports {
-
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -46,7 +45,6 @@ impl Ports {
 
     pub fn remove_port(&mut self, Port { index, node_index }: &Port) -> bool {
         if let Some(port_idxs) = self.0.get_mut(node_index) {
-
             // (0w0) Oooh? Since when was the borrow checker this smart?
             if port_idxs.len() == 1 {
                 self.0.remove(node_index);
@@ -59,10 +57,7 @@ impl Ports {
         }
     }
 
-    pub fn remove_all_ports_to_node(
-        &mut self,
-        node_index: &NodeIndex,
-    ) -> Option<HashSet<usize>> {
+    pub fn remove_all_ports_to_node(&mut self, node_index: &NodeIndex) -> Option<HashSet<usize>> {
         self.0.remove(node_index)
     }
 }

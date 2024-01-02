@@ -117,15 +117,16 @@ fn test_basic() {
         )
         .unwrap();
 
-    let schedule = graph.compile();
+    let (schedule, num_buffers) = graph.compile();
 
-    assert_eq!(
-        schedule,
-        &[ProcessTask::Process {
-            index: 0,
-            inputs: Box::from([Some(BufferIndex::GlobalInput(0))]),
-            outputs: Box::new([Some(OutputBufferIndex::Global(0))])
-        }]
+    assert!(
+        schedule
+            == &[ProcessTask::Process {
+                index: 0,
+                inputs: Box::from([Some(BufferIndex::GlobalInput(0))]),
+                outputs: Box::new([Some(OutputBufferIndex::Global(0))])
+            }]
+            && num_buffers == 0
     );
 }
 
@@ -156,22 +157,23 @@ fn basic_chain() {
         )
         .unwrap();
 
-    let schedule = graph.compile();
+    let (schedule, num_buffers) = graph.compile();
 
-    assert_eq!(
-        schedule,
-        &[
-            ProcessTask::Process {
-                index: second_node_index,
-                inputs: Box::new([Some(BufferIndex::GlobalInput(0))]),
-                outputs: Box::new([Some(OutputBufferIndex::Global(0))])
-            },
-            ProcessTask::Process {
-                index: first_node_index,
-                inputs: Box::new([Some(BufferIndex::Output(OutputBufferIndex::Global(0)))]),
-                outputs: Box::new([Some(OutputBufferIndex::Global(0))])
-            },
-        ]
+    assert!(
+        schedule
+            == &[
+                ProcessTask::Process {
+                    index: second_node_index,
+                    inputs: Box::new([Some(BufferIndex::GlobalInput(0))]),
+                    outputs: Box::new([Some(OutputBufferIndex::Global(0))])
+                },
+                ProcessTask::Process {
+                    index: first_node_index,
+                    inputs: Box::new([Some(BufferIndex::Output(OutputBufferIndex::Global(0)))]),
+                    outputs: Box::new([Some(OutputBufferIndex::Global(0))])
+                },
+            ]
+            && num_buffers == 0
     )
 }
 
@@ -195,27 +197,28 @@ fn basic_adder() {
         )
         .unwrap();
 
-    let schedule = graph.compile();
+    let (schedule, num_buffers) = graph.compile();
 
-    assert_eq!(
-        schedule,
-        &[
-            ProcessTask::Process {
-                index: node1,
-                inputs: Box::new([]),
-                outputs: Box::new([Some(OutputBufferIndex::Global(0))]),
-            },
-            ProcessTask::Process {
-                index: node2,
-                inputs: Box::new([]),
-                outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
-            },
-            ProcessTask::Add {
-                left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
-                right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
-                output: OutputBufferIndex::Global(0),
-            }
-        ]
+    assert!(
+        schedule
+            == &[
+                ProcessTask::Process {
+                    index: node1,
+                    inputs: Box::new([]),
+                    outputs: Box::new([Some(OutputBufferIndex::Global(0))]),
+                },
+                ProcessTask::Process {
+                    index: node2,
+                    inputs: Box::new([]),
+                    outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
+                },
+                ProcessTask::Add {
+                    left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
+                    right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
+                    output: OutputBufferIndex::Global(0),
+                }
+            ]
+            && num_buffers == 1
     )
 }
 
@@ -247,37 +250,38 @@ fn multiple_adds() {
         )
         .unwrap();
 
-    let schedule = graph.compile();
+    let (schedule, num_buffers) = graph.compile();
 
-    assert_eq!(
-        schedule,
-        &[
-            ProcessTask::Process {
-                index: node1,
-                inputs: Box::new([]),
-                outputs: Box::new([Some(OutputBufferIndex::Global(0))]),
-            },
-            ProcessTask::Process {
-                index: node2,
-                inputs: Box::new([]),
-                outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
-            },
-            ProcessTask::Add {
-                left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
-                right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
-                output: OutputBufferIndex::Global(0),
-            },
-            ProcessTask::Process {
-                index: node3,
-                inputs: Box::new([]),
-                outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
-            },
-            ProcessTask::Add {
-                left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
-                right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
-                output: OutputBufferIndex::Global(0),
-            }
-        ]
+    assert!(
+        schedule
+            == &[
+                ProcessTask::Process {
+                    index: node1,
+                    inputs: Box::new([]),
+                    outputs: Box::new([Some(OutputBufferIndex::Global(0))]),
+                },
+                ProcessTask::Process {
+                    index: node2,
+                    inputs: Box::new([]),
+                    outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
+                },
+                ProcessTask::Add {
+                    left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
+                    right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
+                    output: OutputBufferIndex::Global(0),
+                },
+                ProcessTask::Process {
+                    index: node3,
+                    inputs: Box::new([]),
+                    outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
+                },
+                ProcessTask::Add {
+                    left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
+                    right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
+                    output: OutputBufferIndex::Global(0),
+                }
+            ]
+            && num_buffers == 1
     )
 }
 
@@ -317,9 +321,10 @@ fn diamond() {
         )
         .unwrap();
 
-    let schedule = graph.compile();
+    let (schedule, num_buffers) = graph.compile();
 
-    println!("{schedule:#?}");
+    println!("schedule: {schedule:#?}");
+    println!("num_buffers: {num_buffers}");
 }
 
 /// This test should be checked manually for correctness
@@ -388,9 +393,10 @@ fn multi_parrallel() {
         )
         .unwrap();
 
-    let schedule = graph.compile();
+    let (schedule, num_buffers) = graph.compile();
 
     println!("{schedule:#?}");
+    println!("num_buffers: {num_buffers}");
 }
 
 #[test]
@@ -427,27 +433,28 @@ fn m_structure() {
         )
         .unwrap();
 
-    let schedule = graph.compile();
+    let (schedule, num_buffers) = graph.compile();
 
-    assert_eq!(
-        schedule,
-        &[
-            ProcessTask::Process {
-                index: node1,
-                inputs: Box::new([]),
-                outputs: Box::new([Some(OutputBufferIndex::Global(0))]),
-            },
-            ProcessTask::Process {
-                index: node2,
-                inputs: Box::new([]),
-                outputs: Box::new([Some(OutputBufferIndex::Global(2))]),
-            },
-            ProcessTask::Add {
-                left_input: BufferIndex::Output(OutputBufferIndex::Global(2)),
-                right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
-                output: OutputBufferIndex::Global(1),
-            }
-        ]
+    assert!(
+        schedule
+            == &[
+                ProcessTask::Process {
+                    index: node1,
+                    inputs: Box::new([]),
+                    outputs: Box::new([Some(OutputBufferIndex::Global(0))]),
+                },
+                ProcessTask::Process {
+                    index: node2,
+                    inputs: Box::new([]),
+                    outputs: Box::new([Some(OutputBufferIndex::Global(2))]),
+                },
+                ProcessTask::Add {
+                    left_input: BufferIndex::Output(OutputBufferIndex::Global(2)),
+                    right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
+                    output: OutputBufferIndex::Global(1),
+                }
+            ]
+            && num_buffers == 0
     )
 }
 
@@ -466,9 +473,10 @@ fn multiple_global_outputs() {
             .unwrap();
     }
 
-    let schedule = graph.compile();
+    let (schedule, num_buffers) = graph.compile();
 
     println!("{schedule:#?}");
+    println!("num_buffers: {num_buffers}");
 }
 
 /// This test should be checked manually for correctness
@@ -485,9 +493,10 @@ fn copy_global_input_to_global_outputs() {
             .unwrap();
     }
 
-    let schedule = graph.compile();
+    let (schedule, num_buffers) = graph.compile();
 
     println!("{schedule:#?}");
+    println!("num_buffers: {num_buffers}");
 }
 
 /// This test should be checked manually for correctness
@@ -550,7 +559,8 @@ fn complex() {
         )
         .unwrap();
 
-    let schedule = graph.compile();
+    let (schedule, num_buffers) = graph.compile();
 
     println!("{schedule:#?}");
+    println!("num_buffers: {num_buffers}");
 }

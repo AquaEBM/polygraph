@@ -15,6 +15,10 @@ impl BufferAllocator {
         Self::default()
     }
 
+    pub(super) fn num_intermediate_buffers(&self) -> usize {
+        self.num_intermediate_buffers
+    }
+
     pub(super) fn free_buffer(&mut self, port: &Port) -> Option<BufferIndex> {
         let buf_index = self.claims.remove(&port);
 
@@ -40,10 +44,7 @@ impl BufferAllocator {
         }
     }
 
-    pub(super) fn reserve_free_buffer(
-        &mut self,
-        ports: Ports,
-    ) -> Option<OutputBufferIndex> {
+    pub(super) fn reserve_free_buffer(&mut self, ports: Ports) -> Option<OutputBufferIndex> {
         if !ports.is_empty() {
             let buf = if let Some(buf) = self.free_buffers.iter().next().copied() {
                 self.free_buffers.remove(&buf);

@@ -86,7 +86,7 @@ impl Scheduler {
             });
     }
 
-    pub(super) fn compile(&self) -> Vec<ProcessTask> {
+    pub(super) fn compile(&self) -> (Vec<ProcessTask>, usize) {
         let mut final_schedule = vec![];
         let mut buf_allocator = BufferAllocator::new();
 
@@ -125,8 +125,6 @@ impl Scheduler {
             }
         }
 
-        println!("{final_schedule:#?}");
-
         final_schedule
             .iter_mut()
             .for_each(|task| task.replace_and_shift_output_buffers(&buffer_replacements));
@@ -140,6 +138,9 @@ impl Scheduler {
                 }),
         );
 
-        final_schedule
+        (
+            final_schedule,
+            buf_allocator.num_intermediate_buffers() - buffer_replacements.len(),
+        )
     }
 }

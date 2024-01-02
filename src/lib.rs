@@ -176,7 +176,7 @@ impl AudioGraph {
         Scheduler::for_graph(&self.transposed)
     }
 
-    pub fn compile(&self) -> Vec<ProcessTask> {
+    pub fn compile(&self) -> (Vec<ProcessTask>, usize) {
         self.get_scheduler().compile()
     }
 
@@ -185,7 +185,7 @@ impl AudioGraph {
     }
 
     pub fn get_io_mut(&mut self, index: NodeIndex) -> Option<&mut NodeIO> {
-       self.transposed.get_node_mut(index)
+        self.transposed.get_node_mut(index)
     }
 
     pub fn iter_processor_io(&self) -> impl Iterator<Item = (usize, &NodeIO)> {
