@@ -16,21 +16,20 @@ impl Ports {
         self.0.keys()
     }
 
-    pub fn iter_ports<'a>(&'a self) -> impl Iterator<Item = Port> + 'a {
+    pub fn iter_ports(&self) -> impl Iterator<Item = Port> + '_ {
         self.0
             .iter()
-            .map(|(&node_index, port_idxs)| {
+            .flat_map(|(&node_index, port_idxs)| {
                 port_idxs
                     .iter()
                     .map(move |&index| Port { index, node_index })
             })
-            .flatten()
     }
 
     pub(super) fn insert_port(&mut self, Port { index, node_index }: Port) -> bool {
         self.0
             .entry(node_index)
-            .or_insert_with(HashSet::default)
+            .or_default()
             .insert(index)
     }
 
@@ -162,14 +161,12 @@ impl AudioGraphIO {
 
     pub(super) fn get_connections(&self, port: Port) -> Option<&Ports> {
         self.get_node(port.node_index)
-            .map(|interface| interface.get_connections(port.index))
-            .flatten()
+            .and_then(|interface| interface.get_connections(port.index))
     }
 
     pub(super) fn get_connections_mut(&mut self, port: Port) -> Option<&mut Ports> {
         self.get_node_mut(port.node_index)
-            .map(|interface| interface.get_connections_mut(port.index))
-            .flatten()
+            .and_then(|interface| interface.get_connections_mut(port.index))
     }
 
     pub(super) fn connected(

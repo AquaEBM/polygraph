@@ -2,8 +2,38 @@ use crate::{
     buffer::{BufferHandle, Buffers},
     AudioGraph, ProcessTask,
 };
-use core::{cell::Cell, iter, mem, ops::Add};
+use core::{cell::Cell, iter, mem, ops::Add, num::NonZeroUsize};
 use plugin_util::simd::{LaneCount, Simd, SimdElement, SupportedLaneCount};
+
+type Buffer<T> = Box<[Cell<T>]>;
+
+#[allow(unused_variables)]
+pub trait Processor<T, const N: usize>
+where
+    LaneCount<N>: SupportedLaneCount,
+    T: SimdElement,
+{
+    fn process(
+        &mut self,
+        buffers: Buffers<Simd<T, N>>,
+        cluster_idx: usize,
+        params_changed: Option<NonZeroUsize>
+    );
+
+    fn initialize(&mut self, sr: f32, max_buffer_size: usize) {}
+
+    fn reset(&mut self) {}
+
+    fn set_max_polyphony(&mut self, num: usize) {}
+
+    fn activate_cluster(&mut self, index: usize) {}
+
+    fn deactivate_cluster(&mut self, index: usize) {}
+
+    fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {}
+
+    fn deactivate_voice(&mut self, cluster_idx: usize, voice_idx: usize) {}
+}
 
 pub struct AudioGraphProcessor<T, const N: usize>
 where
@@ -12,7 +42,7 @@ where
 {
     processors: Vec<Option<Box<dyn Processor<T, N>>>>,
     schedule: Vec<ProcessTask>,
-    buffers: Box<[Box<[Cell<Simd<T, N>>]>]>,
+    buffers: Box<[Buffer<Simd<T, N>>]>,
 }
 
 impl<T, const N: usize> Default for AudioGraphProcessor<T, N>
@@ -44,25 +74,28 @@ where
 
     pub fn replace_buffers(
         &mut self,
-        buffers: Box<[Box<[Cell<Simd<T, N>>]>]>,
-    ) -> Box<[Box<[Cell<Simd<T, N>>]>]> {
+        buffers: Box<[Buffer<Simd<T, N>>]>,
+    ) -> Box<[Buffer<Simd<T, N>>]> {
         mem::replace(&mut self.buffers, buffers)
     }
 
-    pub fn insert_processor_at_first_available_slot(
+    pub fn insert_processor(
         &mut self,
         processor: Box<dyn Processor<T, N>>,
-    ) {
-        let processor = Some(processor);
-        if let Some(proc) = self
-            .processors
-            .iter_mut()
-            .find(|maybe_proc| maybe_proc.is_none())
-        {
-            *proc = processor;
-        } else {
-            self.processors.push(processor);
+    ) -> usize {
+
+        let proc = Some(processor);
+
+        for (i, slot) in self.processors.iter_mut().enumerate() {
+            if slot.is_none() {
+                *slot = proc;
+                return i;
+            }
         }
+
+        let len = self.processors.len();
+        self.processors.push(proc);
+        len
     }
 
     pub fn remove_processor(&mut self, index: usize) -> Option<Box<dyn Processor<T, N>>> {
@@ -71,37 +104,18 @@ where
             .and_then(|maybe_proc| maybe_proc.take())
     }
 
-    pub fn schedule_for(&mut self, graph: &AudioGraph) {
+    pub fn schedule_for(&mut self, graph: &AudioGraph, buffer_size: usize) {
         let (schedule, num_buffers) = graph.compile();
 
         self.schedule = schedule;
 
-        self.buffers = iter::repeat(unsafe { Box::new_zeroed_slice(64).assume_init() })
+        self.buffers = iter::repeat(
+            // SAFETY: for all T: SimdElement, T is safely zeroable, thus Simd<T, N> is too
+            unsafe { Box::new_zeroed_slice(buffer_size).assume_init() }
+        )
             .take(num_buffers)
             .collect()
     }
-}
-
-#[allow(unused_variables)]
-pub trait Processor<T: SimdElement, const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
-    fn process(&mut self, buffers: Buffers<Simd<T, N>>, cluster_idx: usize);
-
-    fn initialize(&mut self, sr: f32, max_buffer_size: usize) {}
-
-    fn reset(&mut self) {}
-
-    fn set_max_polyphony(&mut self, num: usize) {}
-
-    fn activate_cluster(&mut self, index: usize) {}
-
-    fn deactivate_cluster(&mut self, index: usize) {}
-
-    fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {}
-
-    fn deactivate_voice(&mut self, cluster_idx: usize, voice_idx: usize) {}
 }
 
 impl<T, const N: usize> Processor<T, N> for AudioGraphProcessor<T, N>
@@ -110,7 +124,12 @@ where
     T: SimdElement,
     Simd<T, N>: Add<Output = Simd<T, N>>,
 {
-    fn process(&mut self, buffers: Buffers<Simd<T, N>>, cluster_idx: usize) {
+    fn process(
+        &mut self,
+        buffers: Buffers<Simd<T, N>>,
+        cluster_idx: usize,
+        params_changed: Option<NonZeroUsize>
+    ) {
         let buffer_handle = BufferHandle::parented(self.buffers.as_ref(), &buffers);
 
         for task in &self.schedule {
@@ -151,7 +170,7 @@ where
                     self.processors[*index]
                         .as_mut()
                         .unwrap()
-                        .process(buffers, cluster_idx);
+                        .process(buffers, cluster_idx, params_changed);
                 }
             }
         }

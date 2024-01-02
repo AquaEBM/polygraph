@@ -20,7 +20,7 @@ impl BufferAllocator {
     }
 
     pub(super) fn free_buffer(&mut self, port: &Port) -> Option<BufferIndex> {
-        let buf_index = self.claims.remove(&port);
+        let buf_index = self.claims.remove(port);
 
         if let Some(buf) = buf_index {
             self.try_remove_reservation(buf, port);
