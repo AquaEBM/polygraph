@@ -20,14 +20,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
-name = "graph"
-version = "0.1.0"
-dependencies = [
- "fnv",
- "plugin_util",
-]
-
-[[package]]
 name = "plugin_util"
 version = "0.1.0"
 source = "git+https://github.com/AquaEBM/plugin_util.git#fe9fbecc79d7b9d5669b5598871e561ad29e1db2"
@@ -35,6 +27,14 @@ dependencies = [
  "cfg-if",
  "core_simd",
  "std_float",
+]
+
+[[package]]
+name = "polygraph"
+version = "0.1.0"
+dependencies = [
+ "fnv",
+ "plugin_util",
 ]
 
 [[package]]
