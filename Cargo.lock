@@ -3,6 +3,17 @@
 version = 3
 
 [[package]]
+name = "cfg-if"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
+
+[[package]]
+name = "core_simd"
+version = "0.1.0"
+source = "git+https://github.com/rust-lang/portable-simd.git#1273da658ea64245e18466e50d59daa2cc49822e"
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13,20 +24,23 @@ name = "graph"
 version = "0.1.0"
 dependencies = [
  "fnv",
- "stable-vec",
+ "plugin_util",
 ]
 
 [[package]]
-name = "no-std-compat"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df270209a7f04d62459240d890ecb792714d5db12c92937823574a09930276b4"
+name = "plugin_util"
+version = "0.1.0"
+source = "git+https://github.com/AquaEBM/plugin_util.git#fe9fbecc79d7b9d5669b5598871e561ad29e1db2"
+dependencies = [
+ "cfg-if",
+ "core_simd",
+ "std_float",
+]
 
 [[package]]
-name = "stable-vec"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80dfb7bb28f3d2fa50566793349d633b33f938543154be8071610ea9f590d8ca"
+name = "std_float"
+version = "0.1.0"
+source = "git+https://github.com/rust-lang/portable-simd.git#1273da658ea64245e18466e50d59daa2cc49822e"
 dependencies = [
- "no-std-compat",
+ "core_simd",
 ]

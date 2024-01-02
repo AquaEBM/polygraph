@@ -1,19 +1,25 @@
+#![feature(portable_simd, new_uninit)]
+
 mod io;
 use io::AudioGraphIO;
 pub use io::{NodeIO, Ports};
 
 mod buffer_allocator;
-use scheduler::Scheduler;
 
 mod errors;
 pub use errors::{EdgeInsertError, EdgeNotFound};
 
-use core::iter;
-use std::collections;
-
 mod scheduler;
+use scheduler::Scheduler;
 
-use stable_vec::StableVec;
+pub mod buffer;
+pub use buffer::{BufferIndex, OutputBufferIndex};
+
+pub mod processor;
+
+use core::iter;
+
+use std::collections;
 
 use fnv::FnvBuildHasher;
 
@@ -42,18 +48,6 @@ impl Port {
     pub fn new(index: usize, node_index: NodeIndex) -> Self {
         Self { index, node_index }
     }
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-pub enum OutputBufferIndex {
-    Global(usize),
-    Intermediate(usize),
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-pub enum BufferIndex {
-    GlobalInput(usize),
-    Output(OutputBufferIndex),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]

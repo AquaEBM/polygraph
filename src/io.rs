@@ -4,15 +4,6 @@ use super::*;
 
 use core::ops::{Index, IndexMut};
 
-fn insert_at_next_empty_slot<T>(vec: &mut StableVec<T>, item: T) -> usize {
-    if let Some(i) = vec.first_empty_slot_from(0) {
-        vec.insert(i, item);
-        i
-    } else {
-        vec.push(item)
-    }
-}
-
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Ports(HashMap<NodeIndex, HashSet<usize>>);
 
@@ -115,7 +106,7 @@ impl NodeIO {
 
 #[derive(Debug, Clone)]
 pub(super) struct AudioGraphIO {
-    processors: StableVec<NodeIO>,
+    processors: Vec<Option<NodeIO>>,
     global: NodeIO,
 }
 
@@ -125,42 +116,47 @@ impl AudioGraphIO {
         num_opposite_global_io_ports: usize,
     ) -> Self {
         Self {
-            processors: StableVec::default(),
+            processors: vec![],
             global: NodeIO::with_io_config(num_opposite_global_io_ports, num_global_io_ports),
         }
     }
 
     pub(super) fn with_opposite_config(&self) -> Self {
-        let mut processors = StableVec::with_capacity(self.processors.capacity());
-        self.processors.iter().for_each(|(i, interface)| {
-            processors.insert(i, interface.with_opposite_config());
-        });
-
         Self {
             global: self.global.with_opposite_config(),
-            processors,
+            processors: self
+                .processors
+                .iter()
+                .map(|proc| proc.as_ref().map(|io| io.with_opposite_config()))
+                .collect(),
         }
     }
 
     pub(super) fn iter_processor_io(&self) -> impl Iterator<Item = (usize, &NodeIO)> {
-        self.processors.iter()
+        self.processors
+            .iter()
+            .enumerate()
+            .filter_map(|(i, maybe_io)| maybe_io.as_ref().map(|io| (i, io)))
     }
 
     pub(super) fn iter_mut_processor_io(&mut self) -> impl Iterator<Item = (usize, &mut NodeIO)> {
-        self.processors.iter_mut()
+        self.processors
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, maybe_io)| maybe_io.as_mut().map(|io| (i, io)))
     }
 
     pub(super) fn get_node(&self, index: NodeIndex) -> Option<&NodeIO> {
         match index {
             NodeIndex::Global => Some(&self.global),
-            NodeIndex::Processor(i) => self.processors.get(i),
+            NodeIndex::Processor(i) => self.processors.get(i).and_then(Option::as_ref),
         }
     }
 
     pub(super) fn get_node_mut(&mut self, index: NodeIndex) -> Option<&mut NodeIO> {
         match index {
             NodeIndex::Global => Some(&mut self.global),
-            NodeIndex::Processor(i) => self.processors.get_mut(i),
+            NodeIndex::Processor(i) => self.processors.get_mut(i).and_then(Option::as_mut),
         }
     }
 
@@ -201,18 +197,26 @@ impl AudioGraphIO {
         num_ports: usize,
         num_opposite_ports: usize,
     ) -> usize {
-        insert_at_next_empty_slot(
-            &mut self.processors,
-            NodeIO::with_io_config(num_ports, num_opposite_ports),
-        )
+        let node = Some(NodeIO::with_io_config(num_ports, num_opposite_ports));
+
+        for (i, maybe_io) in self.processors.iter_mut().enumerate() {
+            if maybe_io.is_none() {
+                *maybe_io = node;
+                return i;
+            }
+        }
+
+        let len = self.processors.len();
+        self.processors.push(node);
+        len
     }
 
     pub(super) fn remove_processor(&mut self, index: usize) -> bool {
         self.processors
             .remove(index)
             .map(|_proc| {
-                for interface in self.processors.values_mut() {
-                    for ports in interface.ports_mut() {
+                for io in self.processors.iter_mut().filter_map(Option::as_mut) {
+                    for ports in io.ports_mut() {
                         ports.remove_all_ports_to_node(&NodeIndex::Processor(index));
                     }
                 }
