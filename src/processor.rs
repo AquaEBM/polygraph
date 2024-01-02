@@ -2,7 +2,7 @@ use crate::{
     buffer::{BufferHandle, Buffers},
     AudioGraph, ProcessTask,
 };
-use core::{cell::Cell, iter, mem, ops::Add, num::NonZeroUsize};
+use core::{cell::Cell, iter, mem, num::NonZeroUsize, ops::Add};
 use plugin_util::simd::{LaneCount, Simd, SimdElement, SupportedLaneCount};
 
 type Buffer<T> = Box<[Cell<T>]>;
@@ -17,7 +17,7 @@ where
         &mut self,
         buffers: Buffers<Simd<T, N>>,
         cluster_idx: usize,
-        params_changed: Option<NonZeroUsize>
+        params_changed: Option<NonZeroUsize>,
     );
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize) {}
@@ -79,11 +79,7 @@ where
         mem::replace(&mut self.buffers, buffers)
     }
 
-    pub fn insert_processor(
-        &mut self,
-        processor: Box<dyn Processor<T, N>>,
-    ) -> usize {
-
+    pub fn insert_processor(&mut self, processor: Box<dyn Processor<T, N>>) -> usize {
         let proc = Some(processor);
 
         for (i, slot) in self.processors.iter_mut().enumerate() {
@@ -111,10 +107,10 @@ where
 
         self.buffers = iter::repeat(
             // SAFETY: for all T: SimdElement, T is safely zeroable, thus Simd<T, N> is too
-            unsafe { Box::new_zeroed_slice(buffer_size).assume_init() }
+            unsafe { Box::new_zeroed_slice(buffer_size).assume_init() },
         )
-            .take(num_buffers)
-            .collect()
+        .take(num_buffers)
+        .collect()
     }
 }
 
@@ -128,7 +124,7 @@ where
         &mut self,
         buffers: Buffers<Simd<T, N>>,
         cluster_idx: usize,
-        params_changed: Option<NonZeroUsize>
+        params_changed: Option<NonZeroUsize>,
     ) {
         let buffer_handle = BufferHandle::parented(self.buffers.as_ref(), &buffers);
 
@@ -167,10 +163,11 @@ where
                         outputs.as_ref(),
                     );
 
-                    self.processors[*index]
-                        .as_mut()
-                        .unwrap()
-                        .process(buffers, cluster_idx, params_changed);
+                    self.processors[*index].as_mut().unwrap().process(
+                        buffers,
+                        cluster_idx,
+                        params_changed,
+                    );
                 }
             }
         }

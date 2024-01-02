@@ -17,20 +17,15 @@ impl Ports {
     }
 
     pub fn iter_ports(&self) -> impl Iterator<Item = Port> + '_ {
-        self.0
-            .iter()
-            .flat_map(|(&node_index, port_idxs)| {
-                port_idxs
-                    .iter()
-                    .map(move |&index| Port { index, node_index })
-            })
+        self.0.iter().flat_map(|(&node_index, port_idxs)| {
+            port_idxs
+                .iter()
+                .map(move |&index| Port { index, node_index })
+        })
     }
 
     pub(super) fn insert_port(&mut self, Port { index, node_index }: Port) -> bool {
-        self.0
-            .entry(node_index)
-            .or_default()
-            .insert(index)
+        self.0.entry(node_index).or_default().insert(index)
     }
 
     pub fn remove_port(&mut self, Port { index, node_index }: &Port) -> bool {
