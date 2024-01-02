@@ -21,7 +21,7 @@ pub mod processor;
 mod voice_manager;
 pub use voice_manager::VoiceManager;
 
-use plugin_util::simd::{LaneCount, Simd, SimdElement, SupportedLaneCount};
+pub use plugin_util::{self, simd_util::Float};
 
 use core::{iter, num::NonZeroUsize};
 
@@ -198,14 +198,10 @@ impl AudioGraph {
 }
 
 #[allow(unused_variables)]
-pub trait Processor<T, const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-{
+pub trait Processor {
     fn process(
         &mut self,
-        buffers: Buffers<Simd<T, N>>,
+        buffers: Buffers<Float>,
         cluster_idx: usize,
         params_changed: Option<NonZeroUsize>,
     );

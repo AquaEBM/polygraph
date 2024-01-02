@@ -1,21 +1,13 @@
 use crate::*;
-use core::{iter, mem, num::NonZeroUsize, ops::Add};
+use core::{iter, mem, num::NonZeroUsize};
 
-pub struct AudioGraphProcessor<T, const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-{
-    processors: Vec<Option<Box<dyn Processor<T, N>>>>,
+pub struct AudioGraphProcessor {
+    processors: Vec<Option<Box<dyn Processor>>>,
     schedule: Vec<ProcessTask>,
-    buffers: Box<[Buffer<Simd<T, N>>]>,
+    buffers: Box<[Buffer<Float>]>,
 }
 
-impl<T, const N: usize> Default for AudioGraphProcessor<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-{
+impl Default for AudioGraphProcessor {
     fn default() -> Self {
         Self {
             processors: Default::default(),
@@ -25,11 +17,7 @@ where
     }
 }
 
-impl<T, const N: usize> AudioGraphProcessor<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-{
+impl AudioGraphProcessor {
     pub fn new() -> Self {
         Self::default()
     }
@@ -40,12 +28,12 @@ where
 
     pub fn replace_buffers(
         &mut self,
-        buffers: Box<[Buffer<Simd<T, N>>]>,
-    ) -> Box<[Buffer<Simd<T, N>>]> {
+        buffers: Box<[Buffer<Float>]>,
+    ) -> Box<[Buffer<Float>]> {
         mem::replace(&mut self.buffers, buffers)
     }
 
-    pub fn insert_processor(&mut self, processor: Box<dyn Processor<T, N>>) -> usize {
+    pub fn insert_processor(&mut self, processor: Box<dyn Processor>) -> usize {
         let proc = Some(processor);
 
         for (i, slot) in self.processors.iter_mut().enumerate() {
@@ -60,7 +48,7 @@ where
         len
     }
 
-    pub fn remove_processor(&mut self, index: usize) -> Option<Box<dyn Processor<T, N>>> {
+    pub fn remove_processor(&mut self, index: usize) -> Option<Box<dyn Processor>> {
         self.processors
             .get_mut(index)
             .and_then(|maybe_proc| maybe_proc.take())
@@ -72,7 +60,7 @@ where
         self.schedule = schedule;
 
         self.buffers = iter::repeat(
-            // SAFETY: for all T: SimdElement, T is safely zeroable, thus Simd<T, N> is too
+            // SAFETY: 0 (0.0) is a valid float value
             unsafe { Box::new_zeroed_slice(buffer_size).assume_init() },
         )
         .take(num_buffers)
@@ -80,15 +68,10 @@ where
     }
 }
 
-impl<T, const N: usize> Processor<T, N> for AudioGraphProcessor<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-    Simd<T, N>: Add<Output = Simd<T, N>>,
-{
+impl Processor for AudioGraphProcessor {
     fn process(
         &mut self,
-        buffers: Buffers<Simd<T, N>>,
+        buffers: Buffers<Float>,
         cluster_idx: usize,
         params_changed: Option<NonZeroUsize>,
     ) {
