@@ -18,6 +18,9 @@ pub use buffer::{BufferIndex, Buffers, OutputBufferIndex};
 
 pub mod processor;
 
+mod voice_manager;
+pub use voice_manager::VoiceManager;
+
 use plugin_util::simd::{LaneCount, Simd, SimdElement, SupportedLaneCount};
 
 use core::{iter, num::NonZeroUsize};
