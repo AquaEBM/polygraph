@@ -1,5 +1,7 @@
 use core::{cell::Cell, ops::Add};
 
+pub type Buffer<T> = Box<[Cell<T>]>;
+
 #[derive(Clone, Copy, Default)]
 pub struct InputBuffer<'a, T>(&'a [Cell<T>]);
 
@@ -58,11 +60,11 @@ impl<'a, T> Output<'a, T> {
 
 pub struct BufferHandle<'a, T> {
     parent: Option<&'a Buffers<'a, T>>,
-    buffers: &'a [Box<[Cell<T>]>],
+    buffers: &'a [Buffer<T>],
 }
 
 impl<'a, T> BufferHandle<'a, T> {
-    pub fn parented(buffers: &'a [Box<[Cell<T>]>], parent: &'a Buffers<'a, T>) -> Self {
+    pub fn parented(buffers: &'a [Buffer<T>], parent: &'a Buffers<'a, T>) -> Self {
         Self {
             parent: Some(parent),
             buffers,

@@ -1,39 +1,5 @@
-use crate::{
-    buffer::{BufferHandle, Buffers},
-    AudioGraph, ProcessTask,
-};
-use core::{cell::Cell, iter, mem, num::NonZeroUsize, ops::Add};
-use plugin_util::simd::{LaneCount, Simd, SimdElement, SupportedLaneCount};
-
-type Buffer<T> = Box<[Cell<T>]>;
-
-#[allow(unused_variables)]
-pub trait Processor<T, const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-    T: SimdElement,
-{
-    fn process(
-        &mut self,
-        buffers: Buffers<Simd<T, N>>,
-        cluster_idx: usize,
-        params_changed: Option<NonZeroUsize>,
-    );
-
-    fn initialize(&mut self, sr: f32, max_buffer_size: usize) {}
-
-    fn reset(&mut self) {}
-
-    fn set_max_polyphony(&mut self, num: usize) {}
-
-    fn activate_cluster(&mut self, index: usize) {}
-
-    fn deactivate_cluster(&mut self, index: usize) {}
-
-    fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {}
-
-    fn deactivate_voice(&mut self, cluster_idx: usize, voice_idx: usize) {}
-}
+use crate::*;
+use core::{iter, mem, num::NonZeroUsize, ops::Add};
 
 pub struct AudioGraphProcessor<T, const N: usize>
 where
@@ -173,11 +139,11 @@ where
         }
     }
 
-    fn set_max_polyphony(&mut self, num: usize) {
+    fn set_max_polyphony(&mut self, num_clusters: usize) {
         self.processors
             .iter_mut()
             .filter_map(Option::as_deref_mut)
-            .for_each(|proc| proc.set_max_polyphony(num))
+            .for_each(|proc| proc.set_max_polyphony(num_clusters))
     }
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize) {

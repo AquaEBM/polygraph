@@ -13,11 +13,14 @@ mod scheduler;
 use scheduler::Scheduler;
 
 pub mod buffer;
-pub use buffer::{BufferIndex, OutputBufferIndex};
+use buffer::{Buffer, BufferHandle};
+pub use buffer::{BufferIndex, Buffers, OutputBufferIndex};
 
 pub mod processor;
 
-use core::iter;
+use plugin_util::simd::{LaneCount, Simd, SimdElement, SupportedLaneCount};
+
+use core::{iter, num::NonZeroUsize};
 
 use std::collections;
 
@@ -189,4 +192,32 @@ impl AudioGraph {
     pub fn iter_mut_processor_io(&mut self) -> impl Iterator<Item = (usize, &mut NodeIO)> {
         self.transposed.iter_mut_processor_io()
     }
+}
+
+#[allow(unused_variables)]
+pub trait Processor<T, const N: usize>
+where
+    LaneCount<N>: SupportedLaneCount,
+    T: SimdElement,
+{
+    fn process(
+        &mut self,
+        buffers: Buffers<Simd<T, N>>,
+        cluster_idx: usize,
+        params_changed: Option<NonZeroUsize>,
+    );
+
+    fn initialize(&mut self, sr: f32, max_buffer_size: usize) {}
+
+    fn reset(&mut self) {}
+
+    fn set_max_polyphony(&mut self, num_cluster: usize) {}
+
+    fn activate_cluster(&mut self, index: usize) {}
+
+    fn deactivate_cluster(&mut self, index: usize) {}
+
+    fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {}
+
+    fn deactivate_voice(&mut self, cluster_idx: usize, voice_idx: usize) {}
 }
