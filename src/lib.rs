@@ -25,9 +25,9 @@ pub mod lender;
 mod voice_manager;
 pub use voice_manager::VoiceManager;
 
-pub use plugin_util::{self, simd_util::Float};
+pub mod stereo_util;
 
-use core::{iter, num::NonZeroUsize};
+use core::iter;
 
 use std::collections;
 
@@ -199,28 +199,4 @@ impl AudioGraph {
     pub fn iter_mut_processor_io(&mut self) -> impl Iterator<Item = (usize, &mut NodeIO)> {
         self.transposed.iter_mut_processor_io()
     }
-}
-
-#[allow(unused_variables)]
-pub trait Processor {
-    fn process(
-        &mut self,
-        buffers: Buffers<Float>,
-        cluster_idx: usize,
-        params_changed: Option<NonZeroUsize>,
-    );
-
-    fn initialize(&mut self, sr: f32, max_buffer_size: usize) {}
-
-    fn reset(&mut self) {}
-
-    fn set_max_polyphony(&mut self, num_cluster: usize) {}
-
-    fn activate_cluster(&mut self, index: usize) {}
-
-    fn deactivate_cluster(&mut self, index: usize) {}
-
-    fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {}
-
-    fn deactivate_voice(&mut self, cluster_idx: usize, voice_idx: usize) {}
 }

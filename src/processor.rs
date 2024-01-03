@@ -1,6 +1,33 @@
 use crate::*;
 use core::{iter, mem, num::NonZeroUsize};
 
+pub use plugin_util::simd_util::Float;
+
+#[allow(unused_variables)]
+pub trait Processor {
+    fn process(
+        &mut self,
+        buffers: Buffers<Float>,
+        cluster_idx: usize,
+        params_changed: Option<NonZeroUsize>,
+    );
+
+    fn initialize(&mut self, sr: f32, max_buffer_size: usize) {}
+
+    fn reset(&mut self) {}
+
+    fn set_max_polyphony(&mut self, num_cluster: usize) {}
+
+    fn activate_cluster(&mut self, index: usize) {}
+
+    fn deactivate_cluster(&mut self, index: usize) {}
+
+    fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {}
+
+    fn deactivate_voice(&mut self, cluster_idx: usize, voice_idx: usize) {}
+}
+
+
 pub struct AudioGraphProcessor {
     processors: Vec<Option<Box<dyn Processor>>>,
     schedule: Vec<ProcessTask>,

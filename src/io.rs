@@ -1,6 +1,6 @@
-use crate::errors::{CycleFound, EdgeNotFound};
+use crate::*;
 
-use super::*;
+use errors::{CycleFound, EdgeNotFound};
 
 use core::ops::{Index, IndexMut};
 
