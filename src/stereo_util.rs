@@ -62,12 +62,6 @@ pub fn swap_stereo(v: Float) -> Float {
     simd_swizzle!(v, FLIP_PAIRS)
 }
 
-#[inline]
-pub fn semitones_to_ratio(semitones: Float) -> Float {
-    const RATIO: Float = const_splat(1. / 12.);
-    exp2(semitones * RATIO)
-}
-
 /// triangluar panning of a vector of stereo samples, 0 < pan <= 1
 #[inline]
 pub fn triangular_pan_weights(pan_norm: Float) -> Float {
