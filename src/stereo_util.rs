@@ -2,8 +2,7 @@ use core::mem::transmute;
 
 use plugin_util::{
     simd::{SimdElement, Simd, simd_swizzle, prelude::SimdFloat},
-    simd_util::{Float, FLOATS_PER_VECTOR, const_splat},
-    math::exp2,
+    simd_util::{Float, FLOATS_PER_VECTOR},
 };
 
 pub const STEREO_VOICES_PER_VECTOR: usize = FLOATS_PER_VECTOR / 2;
