@@ -4,6 +4,8 @@ mod io;
 use io::AudioGraphIO;
 pub use io::{NodeIO, Ports};
 
+extern crate alloc;
+
 mod buffer_allocator;
 
 mod errors;
@@ -17,6 +19,8 @@ use buffer::{Buffer, BufferHandle};
 pub use buffer::{BufferIndex, Buffers, OutputBufferIndex};
 
 pub mod processor;
+
+pub mod lender;
 
 mod voice_manager;
 pub use voice_manager::VoiceManager;
