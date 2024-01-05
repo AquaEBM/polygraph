@@ -15,7 +15,7 @@ mod scheduler;
 use scheduler::Scheduler;
 
 pub mod buffer;
-use buffer::{Buffer, BufferHandle};
+use buffer::{OwnedBuffer, BufferHandle};
 pub use buffer::{BufferIndex, Buffers, OutputBufferIndex};
 
 pub mod processor;

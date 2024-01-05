@@ -1,6 +1,6 @@
 use core::{cell::Cell, ops::Add};
 
-pub type Buffer<T> = Box<[Cell<T>]>;
+pub type OwnedBuffer<T> = Box<[Cell<T>]>;
 
 #[derive(Clone, Copy, Default)]
 pub struct InputBuffer<'a, T>(&'a [Cell<T>]);
@@ -78,18 +78,18 @@ impl<'a, T> Output<'a, T> {
 #[derive(Clone, Copy, Default)]
 pub struct BufferHandle<'a, T> {
     parent: Option<&'a Buffers<'a, T>>,
-    buffers: &'a [Buffer<T>],
+    buffers: &'a [OwnedBuffer<T>],
 }
 
 impl<'a, T> BufferHandle<'a, T> {
-    pub const fn parented(buffers: &'a [Buffer<T>], parent: &'a Buffers<'a, T>) -> Self {
+    pub const fn parented(buffers: &'a [OwnedBuffer<T>], parent: &'a Buffers<'a, T>) -> Self {
         Self {
             parent: Some(parent),
             buffers,
         }
     }
 
-    pub const fn toplevel(buffers: &'a [Buffer<T>]) -> Self {
+    pub const fn toplevel(buffers: &'a [OwnedBuffer<T>]) -> Self {
         Self {
             parent: None,
             buffers,

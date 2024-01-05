@@ -37,7 +37,7 @@ where
 {
     processors: Vec<Option<Box<dyn Processor<N>>>>,
     schedule: Vec<ProcessTask>,
-    buffers: Box<[Buffer<Simd<f32, N>>]>,
+    buffers: Box<[OwnedBuffer<Simd<f32, N>>]>,
 }
 
 impl<const N: usize> Default for AudioGraphProcessor<N>
@@ -67,8 +67,8 @@ where
 
     pub fn replace_buffers(
         &mut self,
-        buffers: Box<[Buffer<Simd<f32, N>>]>,
-    ) -> Box<[Buffer<Simd<f32, N>>]> {
+        buffers: Box<[OwnedBuffer<Simd<f32, N>>]>,
+    ) -> Box<[OwnedBuffer<Simd<f32, N>>]> {
         mem::replace(&mut self.buffers, buffers)
     }
 
