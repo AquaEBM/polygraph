@@ -12,6 +12,10 @@ impl<'a, T> InputBuffer<'a, T> {
     pub fn iter(&self) -> impl Iterator<Item = Input<'a, T>> {
         self.0.iter().map(Input)
     }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 impl<'a, T: Copy> Input<'a, T> {
@@ -29,6 +33,10 @@ pub struct Output<'a, T>(&'a Cell<T>);
 impl<'a, T> OutputBuffer<'a, T> {
     pub fn iter(&self) -> impl Iterator<Item = Output<T>> {
         self.0.iter().map(Output)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 
     pub fn as_input(self) -> InputBuffer<'a, T> {
