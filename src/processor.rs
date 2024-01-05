@@ -2,7 +2,6 @@ use crate::*;
 use core::{iter, mem, num::NonZeroUsize};
 
 use plugin_util::simd::{Simd, LaneCount, SupportedLaneCount};
-pub use plugin_util::simd_util::Float;
 
 #[allow(unused_variables)]
 pub trait Processor<const N: usize>
@@ -145,7 +144,7 @@ where
                     outputs,
                 } => {
                     let buffers = Buffers::with_handle_and_io(
-                        &buffer_handle,
+                        buffer_handle,
                         inputs.as_ref(),
                         outputs.as_ref(),
                     );

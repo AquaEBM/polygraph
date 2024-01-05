@@ -9,17 +9,17 @@ pub struct InputBuffer<'a, T>(&'a [Cell<T>]);
 pub struct Input<'a, T>(&'a Cell<T>);
 
 impl<'a, T> InputBuffer<'a, T> {
-    pub fn iter(&self) -> impl Iterator<Item = Input<'a, T>> {
+    pub fn iter(self) -> impl Iterator<Item = Input<'a, T>> {
         self.0.iter().map(Input)
     }
 
-    pub fn len(&self) -> usize {
+    pub const fn len(self) -> usize {
         self.0.len()
     }
 }
 
 impl<'a, T: Copy> Input<'a, T> {
-    pub fn get(&self) -> T {
+    pub fn get(self) -> T {
         self.0.get()
     }
 }
@@ -31,19 +31,19 @@ pub struct OutputBuffer<'a, T>(&'a [Cell<T>]);
 pub struct Output<'a, T>(&'a Cell<T>);
 
 impl<'a, T> OutputBuffer<'a, T> {
-    pub fn iter(&self) -> impl Iterator<Item = Output<T>> {
+    pub fn iter(self) -> impl Iterator<Item = Output<'a, T>> {
         self.0.iter().map(Output)
     }
 
-    pub fn len(&self) -> usize {
+    pub const fn len(self) -> usize {
         self.0.len()
     }
 
-    pub fn as_input(self) -> InputBuffer<'a, T> {
+    pub const fn as_input(self) -> InputBuffer<'a, T> {
         InputBuffer(self.0)
     }
 
-    pub fn add<U>(&self, left: InputBuffer<'a, U>, right: InputBuffer<'a, U>)
+    pub fn add<U>(self, left: InputBuffer<'a, U>, right: InputBuffer<'a, U>)
     where
         U: Add<Output = T> + Copy,
     {
@@ -52,7 +52,7 @@ impl<'a, T> OutputBuffer<'a, T> {
         }
     }
 
-    pub fn copy(&self, other: InputBuffer<'a, T>)
+    pub fn copy(self, other: InputBuffer<'a, T>)
     where
         T: Copy,
     {
@@ -63,32 +63,33 @@ impl<'a, T> OutputBuffer<'a, T> {
 }
 
 impl<'a, T> Output<'a, T> {
-    pub fn get(&self) -> T
+    pub fn get(self) -> T
     where
         T: Copy,
     {
         self.0.get()
     }
 
-    pub fn set(&self, value: T) {
+    pub fn set(self, value: T) {
         self.0.set(value)
     }
 }
 
+#[derive(Clone, Copy, Default)]
 pub struct BufferHandle<'a, T> {
     parent: Option<&'a Buffers<'a, T>>,
     buffers: &'a [Buffer<T>],
 }
 
 impl<'a, T> BufferHandle<'a, T> {
-    pub fn parented(buffers: &'a [Buffer<T>], parent: &'a Buffers<'a, T>) -> Self {
+    pub const fn parented(buffers: &'a [Buffer<T>], parent: &'a Buffers<'a, T>) -> Self {
         Self {
             parent: Some(parent),
             buffers,
         }
     }
 
-    pub fn toplevel(buffers: &'a [Buffer<T>]) -> Self {
+    pub const fn toplevel(buffers: &'a [Buffer<T>]) -> Self {
         Self {
             parent: None,
             buffers,
@@ -97,19 +98,14 @@ impl<'a, T> BufferHandle<'a, T> {
 
     pub fn get_output_buffer(&self, buf_index: OutputBufferIndex) -> Option<OutputBuffer<T>> {
         match buf_index {
-            OutputBufferIndex::Global(i) => self.parent.and_then(|handle| handle.get_output(i)),
-
-            OutputBufferIndex::Intermediate(i) => self
-                .buffers
-                .get(i)
-                .map(|buffer| OutputBuffer(buffer.as_ref())),
+            OutputBufferIndex::Global(i) => self.parent.unwrap().get_output(i),
+            OutputBufferIndex::Intermediate(i) => Some(OutputBuffer(self.buffers[i].as_ref()))
         }
     }
 
     pub fn get_input_buffer(&self, buf_index: BufferIndex) -> Option<InputBuffer<T>> {
         match buf_index {
-            BufferIndex::GlobalInput(i) => self.parent.and_then(|handle| handle.get_input(i)),
-
+            BufferIndex::GlobalInput(i) => self.parent.unwrap().get_input(i),
             BufferIndex::Output(buf_index) => self
                 .get_output_buffer(buf_index)
                 .map(OutputBuffer::as_input),
@@ -129,14 +125,15 @@ pub enum BufferIndex {
     Output(OutputBufferIndex),
 }
 
+#[derive(Clone, Copy, Default)]
 pub struct Buffers<'a, T> {
-    buffer_handle: &'a BufferHandle<'a, T>,
+    buffer_handle: BufferHandle<'a, T>,
     inputs: &'a [Option<BufferIndex>],
     outputs: &'a [Option<OutputBufferIndex>],
 }
 
 impl<'a, T> Buffers<'a, T> {
-    pub fn from_handle(buffer_handle: &'a BufferHandle<'a, T>) -> Self {
+    pub const fn with_handle(buffer_handle: BufferHandle<'a, T>) -> Self {
         Self {
             buffer_handle,
             inputs: &[],
@@ -152,8 +149,12 @@ impl<'a, T> Buffers<'a, T> {
         self.outputs = outputs;
     }
 
-    pub fn with_handle_and_io(
-        buffer_handle: &'a BufferHandle<'a, T>,
+    pub fn set_handle(&mut self, buffer_handle: BufferHandle<'a, T>) {
+        self.buffer_handle = buffer_handle;
+    }
+
+    pub const fn with_handle_and_io(
+        buffer_handle: BufferHandle<'a, T>,
         inputs: &'a [Option<BufferIndex>],
         outputs: &'a [Option<OutputBufferIndex>],
     ) -> Self {
