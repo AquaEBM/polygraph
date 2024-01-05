@@ -1,13 +1,17 @@
 use crate::*;
 use core::{iter, mem, num::NonZeroUsize};
 
+use plugin_util::simd::{Simd, LaneCount, SupportedLaneCount};
 pub use plugin_util::simd_util::Float;
 
 #[allow(unused_variables)]
-pub trait Processor {
+pub trait Processor<const N: usize>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
     fn process(
         &mut self,
-        buffers: Buffers<Float>,
+        buffers: Buffers<Simd<f32, N>>,
         cluster_idx: usize,
         params_changed: Option<NonZeroUsize>,
     );
@@ -28,13 +32,19 @@ pub trait Processor {
 }
 
 
-pub struct AudioGraphProcessor {
-    processors: Vec<Option<Box<dyn Processor>>>,
+pub struct AudioGraphProcessor<const N: usize>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
+    processors: Vec<Option<Box<dyn Processor<N>>>>,
     schedule: Vec<ProcessTask>,
-    buffers: Box<[Buffer<Float>]>,
+    buffers: Box<[Buffer<Simd<f32, N>>]>,
 }
 
-impl Default for AudioGraphProcessor {
+impl<const N: usize> Default for AudioGraphProcessor<N>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
     fn default() -> Self {
         Self {
             processors: Default::default(),
@@ -44,7 +54,10 @@ impl Default for AudioGraphProcessor {
     }
 }
 
-impl AudioGraphProcessor {
+impl<const N: usize> AudioGraphProcessor<N>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
     pub fn new() -> Self {
         Self::default()
     }
@@ -55,12 +68,12 @@ impl AudioGraphProcessor {
 
     pub fn replace_buffers(
         &mut self,
-        buffers: Box<[Buffer<Float>]>,
-    ) -> Box<[Buffer<Float>]> {
+        buffers: Box<[Buffer<Simd<f32, N>>]>,
+    ) -> Box<[Buffer<Simd<f32, N>>]> {
         mem::replace(&mut self.buffers, buffers)
     }
 
-    pub fn insert_processor(&mut self, processor: Box<dyn Processor>) -> usize {
+    pub fn insert_processor(&mut self, processor: Box<dyn Processor<N>>) -> usize {
         let proc = Some(processor);
 
         for (i, slot) in self.processors.iter_mut().enumerate() {
@@ -75,7 +88,7 @@ impl AudioGraphProcessor {
         len
     }
 
-    pub fn remove_processor(&mut self, index: usize) -> Option<Box<dyn Processor>> {
+    pub fn remove_processor(&mut self, index: usize) -> Option<Box<dyn Processor<N>>> {
         self.processors
             .get_mut(index)
             .and_then(|maybe_proc| maybe_proc.take())
@@ -95,10 +108,13 @@ impl AudioGraphProcessor {
     }
 }
 
-impl Processor for AudioGraphProcessor {
+impl<const N: usize> Processor<N> for AudioGraphProcessor<N>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
     fn process(
         &mut self,
-        buffers: Buffers<Float>,
+        buffers: Buffers<Simd<f32, N>>,
         cluster_idx: usize,
         params_changed: Option<NonZeroUsize>,
     ) {
