@@ -88,6 +88,13 @@ impl<'a, T> BufferHandle<'a, T> {
         }
     }
 
+    pub fn toplevel(buffers: &'a [Buffer<T>]) -> Self {
+        Self {
+            parent: None,
+            buffers,
+        }
+    }
+
     pub fn get_output_buffer(&self, buf_index: OutputBufferIndex) -> Option<OutputBuffer<T>> {
         match buf_index {
             OutputBufferIndex::Global(i) => self.parent.and_then(|handle| handle.get_output(i)),
