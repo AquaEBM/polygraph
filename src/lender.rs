@@ -1,3 +1,5 @@
+extern crate alloc;
+
 use alloc::sync::Arc;
 
 pub struct SharedLender<T: ?Sized, const BUFFER_SIZE: usize = 128> {

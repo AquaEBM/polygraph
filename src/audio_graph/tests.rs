@@ -1,4 +1,4 @@
-use polygraph::*;
+use super::*;
 
 #[test]
 #[should_panic]

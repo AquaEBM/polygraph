@@ -1,4 +1,4 @@
-use core::fmt::Display;
+use core::{convert::identity, fmt::Display};
 use std::error::Error;
 
 #[derive(Debug)]
@@ -52,11 +52,7 @@ impl Error for EdgeNotFound {}
 
 impl EdgeNotFound {
     pub(super) fn is_not_error(&self) -> bool {
-        fn id(b: bool) -> bool {
-            b
-        }
-
-        self.from_port.is_some_and(id) && self.to_port.is_some_and(id)
+        self.from_port.is_some_and(identity) && self.to_port.is_some_and(identity)
     }
 }
 

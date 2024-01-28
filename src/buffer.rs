@@ -1,6 +1,6 @@
-use core::{cell::Cell, ops::Add};
+use core::{cell::Cell, ops::Add, num::NonZeroUsize};
 
-pub type OwnedBuffer<T> = Box<[Cell<T>]>;
+pub type OwnedBuffer<T> = Box<Cell<[T]>>;
 
 #[derive(Clone, Copy, Default)]
 pub struct InputBuffer<'a, T>(&'a [Cell<T>]);
@@ -15,6 +15,12 @@ impl<'a, T> InputBuffer<'a, T> {
 
     pub const fn len(self) -> usize {
         self.0.len()
+    }
+}
+
+impl<'a, T> From<&'a [Cell<T>]> for InputBuffer<'a, T> {
+    fn from(value: &'a [Cell<T>]) -> Self {
+        Self(value)
     }
 }
 
@@ -75,105 +81,141 @@ impl<'a, T> Output<'a, T> {
     }
 }
 
-#[derive(Clone, Copy, Default)]
-pub struct BufferHandle<'a, T> {
-    parent: Option<&'a Buffers<'a, T>>,
+#[derive(Default)]
+pub(crate) struct BufferHandle<'a, T> {
+    parent: Option<&'a BufferIndices<'a, T>>,
     buffers: &'a [OwnedBuffer<T>],
 }
 
 impl<'a, T> BufferHandle<'a, T> {
-    pub const fn parented(buffers: &'a [OwnedBuffer<T>], parent: &'a Buffers<'a, T>) -> Self {
+    pub(crate) fn parented(buffers: &'a [OwnedBuffer<T>], parent: &'a BufferIndices<'a, T>) -> Self {
         Self {
             parent: Some(parent),
             buffers,
         }
     }
 
-    pub const fn toplevel(buffers: &'a [OwnedBuffer<T>]) -> Self {
+    pub(crate) fn toplevel(buffers: &'a [OwnedBuffer<T>]) -> Self {
         Self {
             parent: None,
             buffers,
         }
     }
 
-    pub fn get_output_buffer(&self, buf_index: OutputBufferIndex) -> Option<OutputBuffer<T>> {
+    pub(crate) fn get_output_buffer(
+        &'a self,
+        buf_index: OutputBufferIndex,
+        len: usize,
+    ) -> Option<OutputBuffer<'a, T>> {
         match buf_index {
-            OutputBufferIndex::Global(i) => self.parent.unwrap().get_output(i),
-            OutputBufferIndex::Intermediate(i) => Some(OutputBuffer(self.buffers[i].as_ref()))
+            OutputBufferIndex::Global(i) => self.parent.as_ref().unwrap().get_output(i, len),
+            OutputBufferIndex::Intermediate(i) => Some(OutputBuffer(&self.buffers[i].as_slice_of_cells()[..len]))
         }
     }
 
-    pub fn get_input_buffer(&self, buf_index: BufferIndex) -> Option<InputBuffer<T>> {
+    pub(crate) fn get_input_buffer(
+        &'a self,
+        buf_index: BufferIndex,
+        len: usize,
+    ) -> Option<InputBuffer<'a, T>> {
         match buf_index {
-            BufferIndex::GlobalInput(i) => self.parent.unwrap().get_input(i),
-            BufferIndex::Output(buf_index) => self
-                .get_output_buffer(buf_index)
-                .map(OutputBuffer::as_input),
+            BufferIndex::GlobalInput(i) => self.parent.as_ref().unwrap().get_input(i, len),
+            BufferIndex::Output(buf) => self.get_output_buffer(buf, len).map(OutputBuffer::as_input),
         }
     }
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-pub enum OutputBufferIndex {
+pub(crate) enum OutputBufferIndex {
     Global(usize),
     Intermediate(usize),
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-pub enum BufferIndex {
+pub(crate) enum BufferIndex {
     GlobalInput(usize),
     Output(OutputBufferIndex),
 }
 
-#[derive(Clone, Copy, Default)]
-pub struct Buffers<'a, T> {
-    buffer_handle: BufferHandle<'a, T>,
+pub(crate) struct BufferIndices<'a, T> {
+    handle: BufferHandle<'a, T>,
     inputs: &'a [Option<BufferIndex>],
     outputs: &'a [Option<OutputBufferIndex>],
 }
 
-impl<'a, T> Buffers<'a, T> {
-    pub const fn with_handle(buffer_handle: BufferHandle<'a, T>) -> Self {
-        Self {
-            buffer_handle,
-            inputs: &[],
-            outputs: &[],
-        }
+impl<'a, T> BufferIndices<'a, T> {
+    pub(crate) fn with_handle(buffer_handle: BufferHandle<'a, T>) -> Self {
+        Self::with_handle_and_io(buffer_handle, &[], &[])
     }
 
-    pub fn set_inputs(&mut self, inputs: &'a [Option<BufferIndex>]) {
+    pub(crate) fn set_inputs(&mut self, inputs: &'a [Option<BufferIndex>]) {
         self.inputs = inputs;
     }
 
-    pub fn set_outputs(&mut self, outputs: &'a [Option<OutputBufferIndex>]) {
+    pub(crate) fn set_outputs(&mut self, outputs: &'a [Option<OutputBufferIndex>]) {
         self.outputs = outputs;
     }
 
-    pub fn set_handle(&mut self, buffer_handle: BufferHandle<'a, T>) {
-        self.buffer_handle = buffer_handle;
+    pub(crate) fn set_handle(&mut self, buffer_handle: BufferHandle<'a, T>) {
+        self.handle = buffer_handle;
     }
 
-    pub const fn with_handle_and_io(
-        buffer_handle: BufferHandle<'a, T>,
+    pub(crate) fn with_handle_and_io(
+        handle: BufferHandle<'a, T>,
         inputs: &'a [Option<BufferIndex>],
         outputs: &'a [Option<OutputBufferIndex>],
     ) -> Self {
         Self {
-            buffer_handle,
+            handle,
             inputs,
             outputs,
         }
     }
 
-    pub fn get_input(&self, index: usize) -> Option<InputBuffer<T>> {
+    pub(crate) fn get_input(&'a self, index: usize, len: usize) -> Option<InputBuffer<'a, T>> {
         self.inputs.get(index).and_then(|maybe_buf_index| {
-            maybe_buf_index.and_then(|buf_index| self.buffer_handle.get_input_buffer(buf_index))
+            maybe_buf_index.and_then(|buf_index| self.handle.get_input_buffer(buf_index, len))
         })
     }
 
-    pub fn get_output(&self, index: usize) -> Option<OutputBuffer<T>> {
+    pub(crate) fn get_output(&'a self, index: usize, len: usize) -> Option<OutputBuffer<'a, T>> {
         self.outputs.get(index).and_then(|maybe_buf_index| {
-            maybe_buf_index.and_then(|buf_index| self.buffer_handle.get_output_buffer(buf_index))
+            maybe_buf_index.and_then(|buf_index| self.handle.get_output_buffer(buf_index, len))
         })
+    }
+}
+
+pub struct Buffers<'a, T> {
+    len: NonZeroUsize,
+    indices: BufferIndices<'a, T>,
+}
+
+impl<'a, T> Buffers<'a, T> {
+    pub(crate) fn new(
+        len: NonZeroUsize,
+        handle: BufferHandle<'a, T>,
+        inputs: &'a [Option<BufferIndex>],
+        outputs: &'a [Option<OutputBufferIndex>],
+    ) -> Self {
+        Self {
+            len,
+            indices: BufferIndices::with_handle_and_io(handle, inputs, outputs),
+        }
+    }
+
+    pub fn buffer_size(&self) -> NonZeroUsize {
+        self.len
+    }
+
+    pub(crate) fn indices(&'a self) -> &'a BufferIndices<'a, T> {
+        &self.indices
+    }
+
+    pub fn get_input(&'a self, index: usize) -> Option<InputBuffer<'a, T>> {
+        self.indices.get_input(index, self.len.get())
+    }
+
+    pub fn get_output(&'a self, index: usize) -> Option<OutputBuffer<'a, T>> {
+        self.indices.get_output(index, self.len.get())
     }
 }
