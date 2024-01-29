@@ -1,7 +1,7 @@
 use core::mem::transmute;
 
 use plugin_util::{
-    simd::{SimdElement, Simd, simd_swizzle, prelude::SimdFloat},
+    simd::{prelude::SimdFloat, simd_swizzle, Simd, SimdElement},
     simd_util::{Float, FLOATS_PER_VECTOR},
 };
 
@@ -9,22 +9,24 @@ pub const STEREO_VOICES_PER_VECTOR: usize = FLOATS_PER_VECTOR / 2;
 
 // Safety argument for the following two functions:
 //  - both referred to types have the same size, more specifically, 2 * STEREO_VOICES_PER_VECTOR
-// is always equal to FLOATS_PER_VECTOR, because it is always a multiple (in fact, a power) of 2
+// is always equal to FLOATS_PER_VECTOR, because it is always a multiple of 2
 //  - the type of `vector` has greater alignment that of the return type
 //  - the output reference's lifetime is the same as that of the input, so no unbounded lifetimes
 //  - we are transmuting a vector to an array over the same scalar, so values are valid
 
 #[inline]
-pub fn as_stereo_sample_array<'a, T: SimdElement>(
-    vector: &'a Simd<T, FLOATS_PER_VECTOR>,
-) -> &'a [Simd<T, 2>; STEREO_VOICES_PER_VECTOR] {
+pub fn as_stereo_sample_array<T: SimdElement>(
+    vector: &Simd<T, FLOATS_PER_VECTOR>,
+) -> &[Simd<T, 2>; STEREO_VOICES_PER_VECTOR] {
+    // SAFETY: see above
     unsafe { transmute(vector) }
 }
 
 #[inline]
-pub fn as_mut_stereo_sample_array<'a, T: SimdElement>(
-    vector: &'a mut Simd<T, FLOATS_PER_VECTOR>,
+pub fn as_mut_stereo_sample_array<T: SimdElement>(
+    vector: &mut Simd<T, FLOATS_PER_VECTOR>,
 ) -> &mut [Simd<T, 2>; STEREO_VOICES_PER_VECTOR] {
+    // SAFETY: see above
     unsafe { transmute(vector) }
 }
 
