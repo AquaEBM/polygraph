@@ -258,11 +258,11 @@ impl<'a, T> Buffers<'a, T> {
         &mut self.indices
     }
 
-    pub fn get_input(&'a self, start: usize, index: usize) -> Option<InputBuffer<'a, T>> {
-        self.indices.get_input(index, start, self.len.get())
+    pub(crate) fn get_input(&'a self, index: usize) -> Option<InputBuffer<'a, T>> {
+        self.indices.get_input(index, self.start, self.len.get())
     }
 
-    pub fn get_output(&'a self, start: usize, index: usize) -> Option<OutputBuffer<'a, T>> {
-        self.indices.get_output(index, start, self.len.get())
+    pub(crate) fn get_output(&'a self, index: usize) -> Option<OutputBuffer<'a, T>> {
+        self.indices.get_output(index, self.start, self.len.get())
     }
 }
