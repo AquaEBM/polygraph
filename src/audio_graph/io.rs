@@ -28,7 +28,7 @@ impl Ports {
         self.0.entry(node_index).or_default().insert(index)
     }
 
-    pub fn remove_port(&mut self, Port { index, node_index }: &Port) -> bool {
+    pub(super) fn remove_port(&mut self, Port { index, node_index }: &Port) -> bool {
         if let Some(port_idxs) = self.0.get_mut(node_index) {
             // (0w0) Oooh? Since when was the borrow checker this smart?
             if port_idxs.len() == 1 {
@@ -77,16 +77,8 @@ impl NodeIO {
         self.ports.as_ref()
     }
 
-    pub fn inputs(&self) -> &[Ports] {
-        self.ports()
-    }
-
     pub(super) fn ports_mut(&mut self) -> &mut [Ports] {
         self.ports.as_mut()
-    }
-
-    pub fn inputs_mut(&mut self) -> &mut [Ports] {
-        self.ports_mut()
     }
 
     pub(super) fn get_connections(&self, index: usize) -> Option<&Ports> {

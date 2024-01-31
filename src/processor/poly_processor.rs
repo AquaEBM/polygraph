@@ -52,8 +52,8 @@ where
 
     pub fn initialize(&mut self, sr: f32, max_buffer_size: usize) {
         self.processor.initialize(sr, max_buffer_size);
-        iter::once(&mut self.main_buffers)
-            .chain(iter::once(&mut self.scratch_buffers))
+        [&mut self.main_buffers, &mut self.scratch_buffers]
+            .into_iter()
             .for_each(|bufs| {
                 bufs.iter_mut()
                     .for_each(|buf| *buf = new_v_float_buffer(max_buffer_size))
@@ -66,7 +66,7 @@ where
 
     pub fn set_max_polyphony(&mut self, num_clusters: usize) {
         self.processor.set_max_polyphony(num_clusters);
-        self.voice_manager.set_capacity(num_clusters * (N / 2));
+        self.voice_manager.set_capacity_clusters(num_clusters);
     }
 
     pub fn update_param_smoothers(&mut self, num_samples: NonZeroUsize) {
@@ -138,6 +138,8 @@ where
                 ),
                 cluster_idx,
             );
+        } else {
+            return;
         }
 
         for cluster_idx in active_clusters_idxs {
@@ -155,12 +157,16 @@ where
             self.main_buffers
                 .iter()
                 .map(Deref::deref)
-                .zip(self.scratch_buffers.iter().map(Deref::deref))
-                .for_each(|(main, scratch)| {
-                    for (main_sample, scratch_sample) in main.as_slice_of_cells()
-                        [start..start + len.get()]
+                .map(Cell::as_slice_of_cells)
+                .zip(
+                    self.scratch_buffers
                         .iter()
-                        .zip(scratch.as_slice_of_cells()[start..start + len.get()].iter())
+                        .map(Deref::deref)
+                        .map(Cell::as_slice_of_cells),
+                )
+                .for_each(|(main, scratch)| {
+                    for (main_sample, scratch_sample) in main[start..start + len.get()].iter()
+                        .zip(scratch[start..start + len.get()].iter())
                     {
                         main_sample.set(main_sample.get() + scratch_sample.get());
                     }

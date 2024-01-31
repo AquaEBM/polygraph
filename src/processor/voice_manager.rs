@@ -22,12 +22,14 @@ pub(crate) struct VoiceUpdateInfo {
 }
 
 impl<const V: usize> VoiceManager<V> {
+    const V: usize = V / 2;
+
     fn index_to_pos(i: usize) -> (usize, usize) {
-        (i / (V / 2), i % (V / 2))
+        (i / Self::V, i % Self::V)
     }
 
     pub fn num_active_clusters(&self) -> usize {
-        self.num_active_voices() / (V / 2)
+        self.num_active_voices() / Self::V
     }
 
     pub fn num_active_voices(&self) -> usize {
@@ -40,7 +42,7 @@ impl<const V: usize> VoiceManager<V> {
             update: (len < self.cap).then(|| {
                 self.notes.push(midi_note);
                 VoiceUpdate::Add {
-                    empty_cluster: len % (V / 2) == 0,
+                    empty_cluster: len % Self::V == 0,
                     midi_note,
                     voice_index: Self::index_to_pos(len),
                 }
@@ -49,11 +51,11 @@ impl<const V: usize> VoiceManager<V> {
         }
     }
 
-    pub fn remove_voice(&mut self, n: u8) -> VoiceUpdateInfo {
+    pub fn remove_voice(&mut self, midi_note: u8) -> VoiceUpdateInfo {
         let (update, move_voice) = self
             .notes
             .iter()
-            .position(|i| i == &n)
+            .position(|id| id == &midi_note)
             .map(|index| {
                 self.notes.swap_remove(index);
 
@@ -61,7 +63,7 @@ impl<const V: usize> VoiceManager<V> {
 
                 (
                     VoiceUpdate::Remove {
-                        new_cluster: self.notes.len() % (V / 2) == 0,
+                        new_cluster: self.notes.len() % Self::V == 0,
                         voice_index: removed_voice,
                     },
                     (Self::index_to_pos(self.num_active_voices()), removed_voice),
@@ -76,9 +78,13 @@ impl<const V: usize> VoiceManager<V> {
         0..self.notes.len()
     }
 
-    pub fn set_capacity(&mut self, cap: usize) {
+    pub fn set_capacity_voices(&mut self, num_voices: usize) {
         self.notes.clear();
-        self.notes.reserve_exact(cap);
-        self.cap = cap;
+        self.notes.reserve_exact(num_voices);
+        self.cap = num_voices;
+    }
+
+    pub fn set_capacity_clusters(&mut self, num_clusters: usize) {
+        self.set_capacity_voices(num_clusters * Self::V);
     }
 }
