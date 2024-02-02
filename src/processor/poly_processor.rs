@@ -165,7 +165,8 @@ where
                         .map(Cell::as_slice_of_cells),
                 )
                 .for_each(|(main, scratch)| {
-                    for (main_sample, scratch_sample) in main[start..start + len.get()].iter()
+                    for (main_sample, scratch_sample) in main[start..start + len.get()]
+                        .iter()
                         .zip(scratch[start..start + len.get()].iter())
                     {
                         main_sample.set(main_sample.get() + scratch_sample.get());

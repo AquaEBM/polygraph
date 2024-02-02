@@ -254,10 +254,6 @@ impl<'a, T> Buffers<'a, T> {
         &self.indices
     }
 
-    pub(crate) fn indices_mut(&'a mut self) -> &'a mut BufferIndices<'a, T> {
-        &mut self.indices
-    }
-
     pub fn get_input(&'a self, index: usize) -> Option<InputBuffer<'a, T>> {
         self.indices.get_input(index, self.start, self.len.get())
     }
