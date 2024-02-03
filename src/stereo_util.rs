@@ -46,9 +46,9 @@ pub fn splat_stereo<T: SimdElement>(pair: Simd<T, 2>) -> Simd<T, FLOATS_PER_VECT
 }
 
 /// return a vector where values on the left channel
-/// are on the right ones and vice-versa
+/// are on the right and vice-versa
 #[inline]
-pub fn swap_stereo(v: Float) -> Float {
+pub fn swap_stereo<T: SimdElement>(v: Simd<T, FLOATS_PER_VECTOR>) -> Simd<T, FLOATS_PER_VECTOR> {
     const FLIP_PAIRS: [usize; FLOATS_PER_VECTOR] = {
         let mut array = [0; FLOATS_PER_VECTOR];
 
@@ -63,7 +63,7 @@ pub fn swap_stereo(v: Float) -> Float {
     simd_swizzle!(v, FLIP_PAIRS)
 }
 
-/// triangluar panning of a vector of stereo samples, 0 < pan <= 1
+/// triangluar panning of a vector of stereo samples, 0 <= pan <= 1
 #[inline]
 pub fn triangular_pan_weights(pan_norm: Float) -> Float {
     const SIGN_MASK: Float = {
