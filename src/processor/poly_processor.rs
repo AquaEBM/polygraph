@@ -3,6 +3,7 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
+use plugin_util::simd_util::enclosing_div;
 use voice_manager::{VoiceManager, VoiceUpdate, VoiceUpdateInfo};
 
 use super::*;
@@ -50,8 +51,12 @@ where
         }
     }
 
-    pub fn initialize(&mut self, sr: f32, max_buffer_size: usize) {
-        self.processor.initialize(sr, max_buffer_size);
+    pub fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_polyphony: usize) {
+        self.processor.initialize(
+            sr, 
+            max_buffer_size, 
+            enclosing_div(max_polyphony, N / 2)
+        );
         [&mut self.main_buffers, &mut self.scratch_buffers]
             .into_iter()
             .for_each(|bufs| {
@@ -64,38 +69,18 @@ where
         self.processor.reset();
     }
 
-    pub fn set_max_polyphony(&mut self, num_clusters: usize) {
-        self.processor.set_max_polyphony(num_clusters);
-        self.voice_manager.set_capacity_clusters(num_clusters);
-    }
-
-    pub fn update_param_smoothers(&mut self, num_samples: NonZeroUsize) {
-        self.processor.update_param_smoothers(num_samples);
-    }
-
     fn update_voices(&mut self, voice_update: VoiceUpdateInfo) {
         if let Some(update) = voice_update.update {
             match update {
                 VoiceUpdate::Add {
-                    empty_cluster,
                     voice_index: (cluster_idx, voice_idx),
                     midi_note,
                 } => {
-                    if empty_cluster {
-                        self.processor.activate_cluster(cluster_idx);
-                    }
-
-                    self.processor
-                        .activate_voice(cluster_idx, voice_idx, midi_note);
+                    self.processor.activate_voice(cluster_idx, voice_idx, midi_note);
                 }
                 VoiceUpdate::Remove {
-                    new_cluster,
                     voice_index: (cluster_idx, voice_idx),
                 } => {
-                    if new_cluster {
-                        self.processor.deactivate_cluster(cluster_idx);
-                    }
-
                     self.processor.deactivate_voice(cluster_idx, voice_idx);
                 }
             }

@@ -23,17 +23,9 @@ where
 
     fn process(&mut self, buffers: Buffers<Simd<f32, N>>, cluster_idx: usize) {}
 
-    fn update_param_smoothers(&mut self, num_samples: NonZeroUsize) {}
-
-    fn initialize(&mut self, sr: f32, max_buffer_size: usize) {}
+    fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {}
 
     fn reset(&mut self) {}
-
-    fn set_max_polyphony(&mut self, num_clusters: usize) {}
-
-    fn activate_cluster(&mut self, index: usize) {}
-
-    fn deactivate_cluster(&mut self, index: usize) {}
 
     fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {}
 
@@ -205,44 +197,20 @@ where
         }
     }
 
-    fn update_param_smoothers(&mut self, num_samples: NonZeroUsize) {
-        self.processors
-            .iter_mut()
-            .for_each(|proc| proc.update_param_smoothers(num_samples));
-    }
-
-    fn initialize(&mut self, sr: f32, max_buffer_size: usize) {
+    fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {
         self.buffers
             .iter_mut()
             .for_each(|buf| *buf = new_v_float_buffer(max_buffer_size));
 
         self.processors
             .iter_mut()
-            .for_each(|proc| proc.initialize(sr, max_buffer_size))
+            .for_each(|proc| proc.initialize(sr, max_buffer_size, max_num_clusters))
     }
 
     fn reset(&mut self) {
         self.processors
             .iter_mut()
             .for_each(Processor::reset)
-    }
-
-    fn set_max_polyphony(&mut self, num_clusters: usize) {
-        self.processors
-            .iter_mut()
-            .for_each(|proc| proc.set_max_polyphony(num_clusters))
-    }
-
-    fn activate_cluster(&mut self, index: usize) {
-        self.processors
-            .iter_mut()
-            .for_each(|proc| proc.activate_cluster(index))
-    }
-
-    fn deactivate_cluster(&mut self, index: usize) {
-        self.processors
-            .iter_mut()
-            .for_each(|proc| proc.deactivate_cluster(index))
     }
 
     fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {
@@ -276,28 +244,12 @@ where
         self.as_mut().process(buffers, cluster_idx);
     }
 
-    fn update_param_smoothers(&mut self, num_samples: NonZeroUsize) {
-        self.as_mut().update_param_smoothers(num_samples);
-    }
-
-    fn initialize(&mut self, sr: f32, max_buffer_size: usize) {
-        self.as_mut().initialize(sr, max_buffer_size);
+    fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {
+        self.as_mut().initialize(sr, max_buffer_size, max_num_clusters);
     }
 
     fn reset(&mut self) {
         self.as_mut().reset();
-    }
-
-    fn set_max_polyphony(&mut self, num_clusters: usize) {
-        self.as_mut().set_max_polyphony(num_clusters);
-    }
-
-    fn activate_cluster(&mut self, index: usize) {
-        self.as_mut().activate_cluster(index);
-    }
-
-    fn deactivate_cluster(&mut self, index: usize) {
-        self.as_mut().deactivate_cluster(index);
     }
 
     fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {

@@ -6,12 +6,10 @@ pub(crate) struct VoiceManager<const MAX_VECTOR_WIDTH: usize> {
 
 pub enum VoiceUpdate {
     Add {
-        empty_cluster: bool,
         midi_note: u8,
         voice_index: (usize, usize),
     },
     Remove {
-        new_cluster: bool,
         voice_index: (usize, usize),
     },
 }
@@ -42,7 +40,6 @@ impl<const V: usize> VoiceManager<V> {
             update: (len < self.cap).then(|| {
                 self.notes.push(midi_note);
                 VoiceUpdate::Add {
-                    empty_cluster: len % Self::V == 0,
                     midi_note,
                     voice_index: Self::index_to_pos(len),
                 }
@@ -59,14 +56,13 @@ impl<const V: usize> VoiceManager<V> {
             .map(|index| {
                 self.notes.swap_remove(index);
 
-                let removed_voice = Self::index_to_pos(index);
+                let voice_index = Self::index_to_pos(index);
 
                 (
                     VoiceUpdate::Remove {
-                        new_cluster: self.notes.len() % Self::V == 0,
-                        voice_index: removed_voice,
+                        voice_index,
                     },
-                    (Self::index_to_pos(self.num_active_voices()), removed_voice),
+                    (Self::index_to_pos(self.num_active_voices()), voice_index),
                 )
             })
             .unzip();
