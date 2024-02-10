@@ -25,6 +25,8 @@ where
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {}
 
+    fn set_param(&mut self, param_id: u64, norm_val: Simd<f32, N>) {}
+
     fn reset(&mut self) {}
 
     fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {}

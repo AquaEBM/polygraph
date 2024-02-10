@@ -36,10 +36,11 @@ where
             .collect();
 
         let output_buf_indices = (0..o)
-            .map(|i| Some(OutputBufferIndex::Intermediate(i)))
+            .map(OutputBufferIndex::Intermediate)
+            .map(Some)
             .collect();
 
-        let input_buf_indices = (0..i).map(|_i| None).collect();
+        let input_buf_indices = iter::repeat(None).take(i).collect();
 
         Self {
             main_buffers,
