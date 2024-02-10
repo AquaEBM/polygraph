@@ -471,7 +471,7 @@ dependencies = [
 [[package]]
 name = "plugin_util"
 version = "0.1.0"
-source = "git+https://github.com/AquaEBM/plugin_util.git#5873d3eae7c1ce1010ff2ed26a9e77ec373bd01c"
+source = "git+https://github.com/AquaEBM/plugin_util.git#78f9a0ba14edb1333e3073492f5934c58247f583"
 dependencies = [
  "cfg-if",
  "core_simd",
