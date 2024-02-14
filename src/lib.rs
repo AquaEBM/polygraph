@@ -7,3 +7,5 @@ pub mod processor;
 pub mod lender;
 
 pub mod audio_graph;
+
+pub use simd_util;
