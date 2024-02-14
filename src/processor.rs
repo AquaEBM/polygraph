@@ -1,4 +1,4 @@
-use plugin_util::simd::{LaneCount, Simd, SupportedLaneCount};
+use simd_util::simd::{LaneCount, Simd, SupportedLaneCount};
 
 use crate::buffer::new_owned_buffer;
 
@@ -25,7 +25,7 @@ where
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {}
 
-    fn set_param(&mut self, param_id: u64, norm_val: Simd<f32, N>) {}
+    fn set_param(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {}
 
     fn reset(&mut self) {}
 
@@ -48,7 +48,7 @@ where
     unsafe { new_owned_buffer(len) }
 }
 
-pub(crate) struct AudioGraphProcessor<const N: usize>
+pub struct AudioGraphProcessor<const N: usize>
 where
     LaneCount<N>: SupportedLaneCount,
 {
@@ -76,26 +76,26 @@ impl<const N: usize> AudioGraphProcessor<N>
 where
     LaneCount<N>: SupportedLaneCount,
 {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
-    pub(crate) fn set_layout(&mut self, num_inputs: usize, num_outputs: usize) {
+    pub fn set_layout(&mut self, num_inputs: usize, num_outputs: usize) {
         self.layout = (num_inputs, num_outputs);
     }
 
-    pub(crate) fn replace_schedule(&mut self, schedule: Vec<ProcessTask>) -> Vec<ProcessTask> {
+    pub fn replace_schedule(&mut self, schedule: Vec<ProcessTask>) -> Vec<ProcessTask> {
         mem::replace(&mut self.schedule, schedule)
     }
 
-    pub(crate) fn replace_buffers(
+    pub fn replace_buffers(
         &mut self,
         buffers: Box<[OwnedBuffer<Simd<f32, N>>]>,
     ) -> Box<[OwnedBuffer<Simd<f32, N>>]> {
         mem::replace(&mut self.buffers, buffers)
     }
 
-    pub(crate) fn replace_processor(
+    pub fn replace_processor(
         &mut self,
         index: usize,
         processor: Box<dyn Processor<N>>,
@@ -106,7 +106,7 @@ where
             .unwrap_or_else(|| Box::new(Empty))
     }
 
-    pub(crate) fn pour_processors_into(
+    pub fn pour_processors_into(
         &mut self,
         mut vec: Vec<Box<dyn Processor<N>>>,
     ) -> Vec<Box<dyn Processor<N>>> {
@@ -118,12 +118,12 @@ where
         mem::replace(&mut self.processors, vec)
     }
 
-    pub(crate) fn remove_processor(&mut self, index: usize) -> Box<dyn Processor<N>> {
+    pub fn remove_processor(&mut self, index: usize) -> Box<dyn Processor<N>> {
 
         self.replace_processor(index, Box::new(Empty))
     }
 
-    pub(crate) fn schedule_for(&mut self, graph: &AudioGraph, buffer_size: usize) {
+    pub fn schedule_for(&mut self, graph: &AudioGraph, buffer_size: usize) {
         let (schedule, num_buffers) = graph.compile();
 
         self.replace_schedule(schedule);

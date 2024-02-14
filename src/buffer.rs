@@ -150,18 +150,18 @@ impl<'a, T> BufferHandle<'a, T> {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-pub(crate) enum OutputBufferIndex {
+pub enum OutputBufferIndex {
     Global(usize),
     Intermediate(usize),
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-pub(crate) enum BufferIndex {
+pub enum BufferIndex {
     GlobalInput(usize),
     Output(OutputBufferIndex),
 }
 
-pub(crate) struct BufferIndices<'a, T> {
+pub struct BufferIndices<'a, T> {
     handle: BufferHandle<'a, T>,
     inputs: &'a [Option<BufferIndex>],
     outputs: &'a [Option<OutputBufferIndex>],

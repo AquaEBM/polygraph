@@ -48,7 +48,7 @@ impl Port {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub(crate) enum ProcessTask {
+pub enum ProcessTask {
     Add {
         left_input: BufferIndex,
         right_input: BufferIndex,

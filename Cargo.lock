@@ -26,22 +26,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
-name = "plugin_util"
-version = "0.1.0"
-source = "git+https://github.com/AquaEBM/plugin_util.git#5a741fe8c30f6d6efb5a2395ba1a48828bb7ef8b"
-dependencies = [
- "cfg-if",
- "core_simd",
- "std_float",
-]
-
-[[package]]
 name = "polygraph"
 version = "0.1.0"
 dependencies = [
  "fnv",
- "plugin_util",
  "rtrb",
+ "simd_util",
 ]
 
 [[package]]
@@ -51,6 +41,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "99e704dd104faf2326a320140f70f0b736d607c1caa1b1748a6c568a79819109"
 dependencies = [
  "cache-padded",
+]
+
+[[package]]
+name = "simd_util"
+version = "0.1.0"
+source = "git+https://github.com/AquaEBM/simd_util.git#dd93a9b3d654d7e553d9815737b80bc6635323d3"
+dependencies = [
+ "cfg-if",
+ "core_simd",
+ "std_float",
 ]
 
 [[package]]

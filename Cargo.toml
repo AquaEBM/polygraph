@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 
 fnv = "1.0.4"
-plugin_util = { git = "https://github.com/AquaEBM/plugin_util.git", features = ["non_std_simd"] }
+simd_util = { git = "https://github.com/AquaEBM/simd_util.git", features = ["non_std_simd"] }
 rtrb = "0.2"

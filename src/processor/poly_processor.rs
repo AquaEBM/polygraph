@@ -3,7 +3,7 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use plugin_util::simd_util::enclosing_div;
+use simd_util::enclosing_div;
 use voice_manager::{VoiceManager, VoiceUpdate, VoiceUpdateInfo};
 
 use super::*;
