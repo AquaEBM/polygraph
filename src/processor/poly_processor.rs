@@ -53,11 +53,8 @@ where
     }
 
     pub fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_polyphony: usize) {
-        self.processor.initialize(
-            sr, 
-            max_buffer_size, 
-            enclosing_div(max_polyphony, N / 2)
-        );
+        self.processor
+            .initialize(sr, max_buffer_size, enclosing_div(max_polyphony, N / 2));
         [&mut self.main_buffers, &mut self.scratch_buffers]
             .into_iter()
             .for_each(|bufs| {
@@ -77,7 +74,8 @@ where
                     voice_index: (cluster_idx, voice_idx),
                     midi_note,
                 } => {
-                    self.processor.activate_voice(cluster_idx, voice_idx, midi_note);
+                    self.processor
+                        .activate_voice(cluster_idx, voice_idx, midi_note);
                 }
                 VoiceUpdate::Remove {
                     voice_index: (cluster_idx, voice_idx),

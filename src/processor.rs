@@ -25,6 +25,8 @@ where
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {}
 
+    fn set_param_smoothed(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {}
+
     fn set_param(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {}
 
     fn reset(&mut self) {}
@@ -52,7 +54,7 @@ pub struct AudioGraphProcessor<const N: usize>
 where
     LaneCount<N>: SupportedLaneCount,
 {
-    processors: Vec<Box<dyn Processor<N>>>,
+    processors: Box<[Option<Box<dyn Processor<N>>>]>,
     schedule: Vec<ProcessTask>,
     buffers: Box<[OwnedBuffer<Simd<f32, N>>]>,
     layout: (usize, usize),
@@ -99,28 +101,26 @@ where
         &mut self,
         index: usize,
         processor: Box<dyn Processor<N>>,
-    ) -> Box<dyn Processor<N>> {
+    ) -> Option<Box<dyn Processor<N>>> {
         self.processors
             .get_mut(index)
-            .map(|proc_ref| mem::replace(proc_ref, processor))
-            .unwrap_or_else(|| Box::new(Empty))
+            .and_then(Option::as_mut)
+            .map(|proc| mem::replace(proc, processor))
     }
 
     pub fn pour_processors_into(
         &mut self,
-        mut vec: Vec<Box<dyn Processor<N>>>,
-    ) -> Vec<Box<dyn Processor<N>>> {
-        debug_assert!(vec.is_empty());
-        debug_assert!(vec.capacity() >= self.processors.len());
-        for proc in self.processors.drain(..) {
-            vec.push(proc);
+        mut list: Box<[Option<Box<dyn Processor<N>>>]>,
+    ) -> Box<[Option<Box<dyn Processor<N>>>]> {
+        debug_assert!(list.len() >= self.processors.len());
+        for (input, output) in self.processors.iter_mut().zip(list.iter_mut()) {
+            mem::swap(input, output);
         }
-        mem::replace(&mut self.processors, vec)
+        mem::replace(&mut self.processors, list)
     }
 
-    pub fn remove_processor(&mut self, index: usize) -> Box<dyn Processor<N>> {
-
-        self.replace_processor(index, Box::new(Empty))
+    pub fn remove_processor(&mut self, index: usize) -> Option<Box<dyn Processor<N>>> {
+        self.processors.get_mut(index).and_then(Option::take)
     }
 
     pub fn schedule_for(&mut self, graph: &AudioGraph, buffer_size: usize) {
@@ -133,6 +133,10 @@ where
                 .take(num_buffers)
                 .collect(),
         );
+    }
+
+    pub fn processors(&mut self) -> impl Iterator<Item = &mut (dyn Processor<N> + 'static)> {
+        self.processors.iter_mut().filter_map(Option::as_deref_mut)
     }
 }
 
@@ -193,7 +197,10 @@ where
                         inputs.as_ref(),
                         outputs.as_ref(),
                     );
-                    self.processors[*index].process(bufs, cluster_idx);
+                    self.processors[*index]
+                        .as_deref_mut()
+                        .unwrap()
+                        .process(bufs, cluster_idx);
                 }
             }
         }
@@ -204,33 +211,26 @@ where
             .iter_mut()
             .for_each(|buf| *buf = new_v_float_buffer(max_buffer_size));
 
-        self.processors
-            .iter_mut()
+        self.processors()
             .for_each(|proc| proc.initialize(sr, max_buffer_size, max_num_clusters))
     }
 
     fn reset(&mut self) {
-        self.processors
-            .iter_mut()
-            .for_each(Processor::reset)
+        self.processors().for_each(Processor::reset)
     }
 
     fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {
-        self.processors
-            .iter_mut()
+        self.processors()
             .for_each(|proc| proc.activate_voice(cluster_idx, voice_idx, note))
     }
 
     fn deactivate_voice(&mut self, cluster_idx: usize, voice_idx: usize) {
-        self.processors
-            .iter_mut()
+        self.processors()
             .for_each(|proc| proc.deactivate_voice(cluster_idx, voice_idx))
     }
 
     fn move_state(&mut self, from: (usize, usize), to: (usize, usize)) {
-        self.processors
-            .iter_mut()
-            .for_each(|proc| proc.move_state(from, to))
+        self.processors().for_each(|proc| proc.move_state(from, to))
     }
 }
 
@@ -247,7 +247,17 @@ where
     }
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {
-        self.as_mut().initialize(sr, max_buffer_size, max_num_clusters);
+        self.as_mut()
+            .initialize(sr, max_buffer_size, max_num_clusters);
+    }
+
+    fn set_param(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {
+        self.as_mut().set_param(cluster_idx, param_id, norm_val);
+    }
+
+    fn set_param_smoothed(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {
+        self.as_mut()
+            .set_param_smoothed(cluster_idx, param_id, norm_val);
     }
 
     fn reset(&mut self) {

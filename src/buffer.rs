@@ -96,7 +96,7 @@ impl<'a, T> OutputBuffer<'a, T> {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct BufferHandle<'a, T> {
     parent: Option<&'a BufferIndices<'a, T>>,
     buffers: &'a [OwnedBuffer<T>],
@@ -161,6 +161,7 @@ pub enum BufferIndex {
     Output(OutputBufferIndex),
 }
 
+#[derive(Clone, Copy, Default)]
 pub struct BufferIndices<'a, T> {
     handle: BufferHandle<'a, T>,
     inputs: &'a [Option<BufferIndex>],
@@ -221,6 +222,7 @@ impl<'a, T> BufferIndices<'a, T> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Buffers<'a, T> {
     start: usize,
     len: NonZeroUsize,

@@ -59,9 +59,7 @@ impl<const V: usize> VoiceManager<V> {
                 let voice_index = Self::index_to_pos(index);
 
                 (
-                    VoiceUpdate::Remove {
-                        voice_index,
-                    },
+                    VoiceUpdate::Remove { voice_index },
                     (Self::index_to_pos(self.num_active_voices()), voice_index),
                 )
             })
@@ -74,9 +72,8 @@ impl<const V: usize> VoiceManager<V> {
         0..self.notes.len()
     }
 
-    pub fn set_capacity_voices(&mut self, num_voices: usize) {
-        self.notes.clear();
-        self.notes.reserve_exact(num_voices);
+    fn set_capacity_voices(&mut self, num_voices: usize) {
+        self.notes = Vec::with_capacity(num_voices);
         self.cap = num_voices;
     }
 
