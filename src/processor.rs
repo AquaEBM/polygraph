@@ -7,7 +7,7 @@ use super::{
     buffer::{BufferHandle, BufferIndex, Buffers, OutputBufferIndex, OwnedBuffer},
 };
 
-use core::{iter, mem, num::NonZeroUsize};
+use core::{any::Any, iter, mem, num::NonZeroUsize};
 
 pub mod poly_processor;
 mod voice_manager;
@@ -28,6 +28,8 @@ where
     fn set_param_smoothed(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {}
 
     fn set_param(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {}
+
+    fn custom_event(&mut self, event: &mut dyn Any) {}
 
     fn reset(&mut self) {}
 
@@ -50,17 +52,17 @@ where
     unsafe { new_owned_buffer(len) }
 }
 
-pub struct AudioGraphProcessor<const N: usize>
+pub struct AudioGraphProcessor<T, const N: usize>
 where
     LaneCount<N>: SupportedLaneCount,
 {
-    processors: Box<[Option<Box<dyn Processor<N>>>]>,
+    processors: Box<[Option<T>]>,
     schedule: Vec<ProcessTask>,
     buffers: Box<[OwnedBuffer<Simd<f32, N>>]>,
     layout: (usize, usize),
 }
 
-impl<const N: usize> Default for AudioGraphProcessor<N>
+impl<T, const N: usize> Default for AudioGraphProcessor<T, N>
 where
     LaneCount<N>: SupportedLaneCount,
 {
@@ -74,7 +76,7 @@ where
     }
 }
 
-impl<const N: usize> AudioGraphProcessor<N>
+impl<T, const N: usize> AudioGraphProcessor<T, N>
 where
     LaneCount<N>: SupportedLaneCount,
 {
@@ -97,21 +99,14 @@ where
         mem::replace(&mut self.buffers, buffers)
     }
 
-    pub fn replace_processor(
-        &mut self,
-        index: usize,
-        processor: Box<dyn Processor<N>>,
-    ) -> Option<Box<dyn Processor<N>>> {
+    pub fn replace_processor(&mut self, index: usize, processor: T) -> Option<T> {
         self.processors
             .get_mut(index)
             .and_then(Option::as_mut)
             .map(|proc| mem::replace(proc, processor))
     }
 
-    pub fn pour_processors_into(
-        &mut self,
-        mut list: Box<[Option<Box<dyn Processor<N>>>]>,
-    ) -> Box<[Option<Box<dyn Processor<N>>>]> {
+    pub fn pour_processors_into(&mut self, mut list: Box<[Option<T>]>) -> Box<[Option<T>]> {
         debug_assert!(list.len() >= self.processors.len());
         for (input, output) in self.processors.iter_mut().zip(list.iter_mut()) {
             mem::swap(input, output);
@@ -119,7 +114,7 @@ where
         mem::replace(&mut self.processors, list)
     }
 
-    pub fn remove_processor(&mut self, index: usize) -> Option<Box<dyn Processor<N>>> {
+    pub fn remove_processor(&mut self, index: usize) -> Option<T> {
         self.processors.get_mut(index).and_then(Option::take)
     }
 
@@ -135,12 +130,12 @@ where
         );
     }
 
-    pub fn processors(&mut self) -> impl Iterator<Item = &mut (dyn Processor<N> + 'static)> {
-        self.processors.iter_mut().filter_map(Option::as_deref_mut)
+    pub fn processors(&mut self) -> impl Iterator<Item = &mut T> {
+        self.processors.iter_mut().filter_map(Option::as_mut)
     }
 }
 
-impl<const N: usize> Processor<N> for AudioGraphProcessor<N>
+impl<const N: usize, T: Processor<N>> Processor<N> for AudioGraphProcessor<T, N>
 where
     LaneCount<N>: SupportedLaneCount,
 {
@@ -198,7 +193,7 @@ where
                         outputs.as_ref(),
                     );
                     self.processors[*index]
-                        .as_deref_mut()
+                        .as_mut()
                         .unwrap()
                         .process(bufs, cluster_idx);
                 }
@@ -258,6 +253,10 @@ where
     fn set_param_smoothed(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {
         self.as_mut()
             .set_param_smoothed(cluster_idx, param_id, norm_val);
+    }
+
+    fn custom_event(&mut self, event: &mut dyn Any) {
+        self.as_mut().custom_event(event);
     }
 
     fn reset(&mut self) {
