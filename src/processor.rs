@@ -11,7 +11,7 @@ use core::{any::Any, iter, mem, ops::Add};
 
 #[allow(unused_variables)]
 pub trait Processor {
-    type Sample: SimdFloat + Add<Output = Self::Sample>;
+    type Sample: SimdFloat;
 
     fn audio_io_layout(&self) -> (usize, usize) {
         (0, 0)
@@ -22,20 +22,25 @@ pub trait Processor {
         buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
-    ) {
-    }
+    ) {}
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {}
 
     fn set_param(
         &mut self,
         cluster_idx: usize,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
         param_id: u64,
         norm_val: Self::Sample,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
         smoothed: bool,
-    ) {
-    }
+    ) {}
+
+    fn set_voice_note(
+        &mut self,
+        cluster_idx: usize,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        note: Self::Sample,
+    ) {}
 
     fn custom_event(&mut self, event: &mut dyn Any) {}
 
@@ -123,7 +128,10 @@ impl<T: Processor> AudioGraphProcessor<T> {
     }
 }
 
-impl<T: Processor> Processor for AudioGraphProcessor<T> {
+impl<T: Processor> Processor for AudioGraphProcessor<T>
+where
+    T::Sample: Add<Output = T::Sample>,
+{
     type Sample = T::Sample;
 
     fn audio_io_layout(&self) -> (usize, usize) {
@@ -205,11 +213,20 @@ impl<T: Processor> Processor for AudioGraphProcessor<T> {
 
     fn reset(&mut self, cluster_idx: usize, voice_mask: &<Self::Sample as SimdFloat>::Mask) {
         self.processors()
-            .for_each(|proc| proc.reset(cluster_idx, voice_mask));
+            .for_each(|proc| proc.reset(cluster_idx, voice_mask))
     }
 
     fn move_state(&mut self, from: (usize, usize), to: (usize, usize)) {
         self.processors().for_each(|proc| proc.move_state(from, to))
+    }
+
+    fn set_voice_note(
+        &mut self,
+        cluster_idx: usize,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        note: Self::Sample,
+    ) {
+        self.processors().for_each(|proc| proc.set_voice_note(cluster_idx, voice_mask, note))
     }
 }
 
@@ -249,12 +266,12 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
     fn set_param(
         &mut self,
         cluster_idx: usize,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
         param_id: u64,
         norm_val: Self::Sample,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
         smoothed: bool,
     ) {
         self.as_mut()
-            .set_param(cluster_idx, param_id, norm_val, voice_mask, smoothed);
+            .set_param(cluster_idx, voice_mask, param_id, norm_val, smoothed);
     }
 }

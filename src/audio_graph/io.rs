@@ -1,6 +1,6 @@
 use super::*;
 
-use errors::{CycleFound, EdgeNotFound};
+use errors::CycleFound;
 
 use core::ops::{Index, IndexMut};
 
