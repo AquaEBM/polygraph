@@ -1,71 +1,62 @@
-use simd_util::simd::{LaneCount, Simd, SupportedLaneCount};
+use simd_util::simd::num::SimdFloat;
 
 use crate::buffer::new_owned_buffer;
 
 use super::{
     audio_graph::{AudioGraph, ProcessTask},
-    buffer::{BufferHandle, BufferIndex, Buffers, OutputBufferIndex, OwnedBuffer},
+    buffer::{BufferHandle, Buffers, OwnedBuffer},
 };
 
-use core::{any::Any, iter, mem, num::NonZeroUsize};
-
-pub mod poly_processor;
-mod voice_manager;
+use core::{any::Any, iter, mem, ops::Add};
 
 #[allow(unused_variables)]
-pub trait Processor<const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+pub trait Processor {
+    type Sample: SimdFloat + Add<Output = Self::Sample>;
+
     fn audio_io_layout(&self) -> (usize, usize) {
         (0, 0)
     }
 
-    fn process(&mut self, buffers: Buffers<Simd<f32, N>>, cluster_idx: usize) {}
+    fn process(
+        &mut self,
+        buffers: Buffers<Self::Sample>,
+        cluster_idx: usize,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+    ) {
+    }
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {}
 
-    fn set_param_smoothed(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {}
-
-    fn set_param(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {}
+    fn set_param(
+        &mut self,
+        cluster_idx: usize,
+        param_id: u64,
+        norm_val: Self::Sample,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        smoothed: bool,
+    ) {
+    }
 
     fn custom_event(&mut self, event: &mut dyn Any) {}
 
-    fn reset(&mut self) {}
-
-    fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {}
-
-    fn deactivate_voice(&mut self, cluster_idx: usize, voice_idx: usize) {}
+    fn reset(&mut self, cluster_idx: usize, voice_mask: &<Self::Sample as SimdFloat>::Mask) {}
 
     fn move_state(&mut self, from: (usize, usize), to: (usize, usize)) {}
 }
 
-struct Empty;
-
-impl<const N: usize> Processor<N> for Empty where LaneCount<N>: SupportedLaneCount {}
-
-pub(crate) fn new_v_float_buffer<const N: usize>(len: usize) -> OwnedBuffer<Simd<f32, N>>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+pub(crate) fn new_v_float_buffer<T: SimdFloat>(len: usize) -> OwnedBuffer<T> {
     // SAFETY: f32s and thus Simd<f32, N>s are safely zeroable
     unsafe { new_owned_buffer(len) }
 }
 
-pub struct AudioGraphProcessor<T, const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+pub struct AudioGraphProcessor<T: Processor> {
     processors: Box<[Option<T>]>,
     schedule: Vec<ProcessTask>,
-    buffers: Box<[OwnedBuffer<Simd<f32, N>>]>,
+    buffers: Box<[OwnedBuffer<T::Sample>]>,
     layout: (usize, usize),
 }
 
-impl<T, const N: usize> Default for AudioGraphProcessor<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+impl<T: Processor> Default for AudioGraphProcessor<T> {
     fn default() -> Self {
         Self {
             processors: Default::default(),
@@ -76,10 +67,7 @@ where
     }
 }
 
-impl<T, const N: usize> AudioGraphProcessor<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+impl<T: Processor> AudioGraphProcessor<T> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -94,8 +82,8 @@ where
 
     pub fn replace_buffers(
         &mut self,
-        buffers: Box<[OwnedBuffer<Simd<f32, N>>]>,
-    ) -> Box<[OwnedBuffer<Simd<f32, N>>]> {
+        buffers: Box<[OwnedBuffer<T::Sample>]>,
+    ) -> Box<[OwnedBuffer<T::Sample>]> {
         mem::replace(&mut self.buffers, buffers)
     }
 
@@ -135,15 +123,19 @@ where
     }
 }
 
-impl<const N: usize, T: Processor<N>> Processor<N> for AudioGraphProcessor<T, N>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+impl<T: Processor> Processor for AudioGraphProcessor<T> {
+    type Sample = T::Sample;
+
     fn audio_io_layout(&self) -> (usize, usize) {
         self.layout
     }
 
-    fn process(&mut self, buffers: Buffers<Simd<f32, N>>, cluster_idx: usize) {
+    fn process(
+        &mut self,
+        buffers: Buffers<Self::Sample>,
+        cluster_idx: usize,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+    ) {
         let len = buffers.buffer_size().get();
         let start = buffers.start();
 
@@ -192,10 +184,11 @@ where
                         inputs.as_ref(),
                         outputs.as_ref(),
                     );
-                    self.processors[*index]
-                        .as_mut()
-                        .unwrap()
-                        .process(bufs, cluster_idx);
+                    self.processors[*index].as_mut().unwrap().process(
+                        bufs,
+                        cluster_idx,
+                        voice_mask,
+                    );
                 }
             }
         }
@@ -210,18 +203,9 @@ where
             .for_each(|proc| proc.initialize(sr, max_buffer_size, max_num_clusters))
     }
 
-    fn reset(&mut self) {
-        self.processors().for_each(Processor::reset)
-    }
-
-    fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {
+    fn reset(&mut self, cluster_idx: usize, voice_mask: &<Self::Sample as SimdFloat>::Mask) {
         self.processors()
-            .for_each(|proc| proc.activate_voice(cluster_idx, voice_idx, note))
-    }
-
-    fn deactivate_voice(&mut self, cluster_idx: usize, voice_idx: usize) {
-        self.processors()
-            .for_each(|proc| proc.deactivate_voice(cluster_idx, voice_idx))
+            .for_each(|proc| proc.reset(cluster_idx, voice_mask));
     }
 
     fn move_state(&mut self, from: (usize, usize), to: (usize, usize)) {
@@ -229,16 +213,20 @@ where
     }
 }
 
-impl<const N: usize, T: ?Sized + Processor<N>> Processor<N> for Box<T>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+impl<T: ?Sized + Processor> Processor for Box<T> {
+    type Sample = T::Sample;
+
     fn audio_io_layout(&self) -> (usize, usize) {
         self.as_ref().audio_io_layout()
     }
 
-    fn process(&mut self, buffers: Buffers<Simd<f32, N>>, cluster_idx: usize) {
-        self.as_mut().process(buffers, cluster_idx);
+    fn process(
+        &mut self,
+        buffers: Buffers<Self::Sample>,
+        cluster_idx: usize,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+    ) {
+        self.as_mut().process(buffers, cluster_idx, voice_mask);
     }
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {
@@ -246,32 +234,27 @@ where
             .initialize(sr, max_buffer_size, max_num_clusters);
     }
 
-    fn set_param(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {
-        self.as_mut().set_param(cluster_idx, param_id, norm_val);
-    }
-
-    fn set_param_smoothed(&mut self, cluster_idx: usize, param_id: u64, norm_val: Simd<f32, N>) {
-        self.as_mut()
-            .set_param_smoothed(cluster_idx, param_id, norm_val);
-    }
-
     fn custom_event(&mut self, event: &mut dyn Any) {
         self.as_mut().custom_event(event);
     }
 
-    fn reset(&mut self) {
-        self.as_mut().reset();
-    }
-
-    fn activate_voice(&mut self, cluster_idx: usize, voice_idx: usize, note: u8) {
-        self.as_mut().activate_voice(cluster_idx, voice_idx, note);
-    }
-
-    fn deactivate_voice(&mut self, cluster_idx: usize, voice_idx: usize) {
-        self.as_mut().deactivate_voice(cluster_idx, voice_idx);
+    fn reset(&mut self, cluster_idx: usize, voice_mask: &<Self::Sample as SimdFloat>::Mask) {
+        self.as_mut().reset(cluster_idx, voice_mask);
     }
 
     fn move_state(&mut self, from: (usize, usize), to: (usize, usize)) {
         self.as_mut().move_state(from, to);
+    }
+
+    fn set_param(
+        &mut self,
+        cluster_idx: usize,
+        param_id: u64,
+        norm_val: Self::Sample,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        smoothed: bool,
+    ) {
+        self.as_mut()
+            .set_param(cluster_idx, param_id, norm_val, voice_mask, smoothed);
     }
 }
