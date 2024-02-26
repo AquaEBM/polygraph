@@ -1,4 +1,4 @@
-use simd_util::simd::num::SimdFloat;
+use simd_util::{simd::num::SimdFloat, Float};
 
 use crate::buffer::new_owned_buffer;
 
@@ -8,6 +8,14 @@ use super::{
 };
 
 use core::{any::Any, iter, mem, ops::Add};
+
+pub struct Params;
+
+impl Params {
+    pub fn get_param(&self, param_id: u64) -> Float {
+        Float::splat(0.0)
+    }
+}
 
 #[allow(unused_variables)]
 pub trait Processor {
@@ -22,7 +30,8 @@ pub trait Processor {
         buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
-    ) {}
+    ) {
+    }
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {}
 
@@ -32,15 +41,24 @@ pub trait Processor {
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
         param_id: u64,
         norm_val: Self::Sample,
-        smoothed: bool,
-    ) {}
+    ) {
+    }
+
+    fn set_all_params(
+        &mut self,
+        cluster_idx: usize,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        params: Params,
+    ) {
+    }
 
     fn set_voice_note(
         &mut self,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
         note: Self::Sample,
-    ) {}
+    ) {
+    }
 
     fn custom_event(&mut self, event: &mut dyn Any) {}
 
@@ -148,7 +166,7 @@ where
         let start = buffers.start();
 
         for task in &self.schedule {
-            let buffer_handle = BufferHandle::parented(self.buffers.as_mut(), buffers.indices());
+            let handle = BufferHandle::parented(self.buffers.as_mut(), buffers.indices());
 
             match task {
                 ProcessTask::Add {
@@ -156,27 +174,25 @@ where
                     right_input,
                     output,
                 } => {
-                    let l = buffer_handle
-                        .get_input_buffer(*left_input, start, len)
-                        .unwrap();
-                    let r = buffer_handle
-                        .get_input_buffer(*right_input, start, len)
-                        .unwrap();
-                    let output = buffer_handle
-                        .get_output_buffer(*output, start, len)
-                        .unwrap();
+                    let l = handle.get_input_buffer(*left_input, start, len).unwrap();
+                    let r = handle.get_input_buffer(*right_input, start, len).unwrap();
+                    let output = handle.get_output_buffer(*output, start, len).unwrap();
 
-                    output.add(l, r);
+                    for ((l, r), output) in l.iter().zip(r).zip(output) {
+                        output.set(l.get() + r.get())
+                    }
                 }
 
                 ProcessTask::Copy { input, outputs } => {
-                    let input = buffer_handle.get_input_buffer(*input, start, len).unwrap();
+                    let input = handle.get_input_buffer(*input, start, len).unwrap();
 
                     outputs.iter().for_each(|&index| {
-                        buffer_handle
-                            .get_output_buffer(index, start, len)
-                            .unwrap()
-                            .copy(input)
+                        for (i, o) in input
+                            .iter()
+                            .zip(handle.get_output_buffer(index, start, len).unwrap())
+                        {
+                            o.set(i.get())
+                        }
                     })
                 }
 
@@ -188,7 +204,7 @@ where
                     let bufs = Buffers::new(
                         buffers.start(),
                         buffers.buffer_size(),
-                        buffer_handle,
+                        handle,
                         inputs.as_ref(),
                         outputs.as_ref(),
                     );
@@ -226,7 +242,8 @@ where
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
         note: Self::Sample,
     ) {
-        self.processors().for_each(|proc| proc.set_voice_note(cluster_idx, voice_mask, note))
+        self.processors()
+            .for_each(|proc| proc.set_voice_note(cluster_idx, voice_mask, note))
     }
 }
 
@@ -269,9 +286,27 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
         param_id: u64,
         norm_val: Self::Sample,
-        smoothed: bool,
     ) {
         self.as_mut()
-            .set_param(cluster_idx, voice_mask, param_id, norm_val, smoothed);
+            .set_param(cluster_idx, voice_mask, param_id, norm_val);
+    }
+
+    fn set_all_params(
+        &mut self,
+        cluster_idx: usize,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        params: Params,
+    ) {
+        self.as_mut()
+            .set_all_params(cluster_idx, voice_mask, params);
+    }
+
+    fn set_voice_note(
+        &mut self,
+        cluster_idx: usize,
+        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        note: Self::Sample,
+    ) {
+        self.as_mut().set_voice_note(cluster_idx, voice_mask, note);
     }
 }

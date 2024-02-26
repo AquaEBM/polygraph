@@ -1,4 +1,13 @@
-use core::{cell::Cell, mem::transmute, num::NonZeroUsize, ops::Add};
+use core::{
+    cell::Cell,
+    mem::{self, transmute},
+    num::NonZeroUsize,
+};
+
+use simd_util::{
+    simd::{Simd, SimdElement},
+    split_stereo_cell, FLOATS_PER_VECTOR, STEREO_VOICES_PER_VECTOR,
+};
 
 pub type OwnedBuffer<T> = Box<Cell<[T]>>;
 
@@ -9,90 +18,48 @@ pub(crate) unsafe fn new_owned_buffer<T>(len: usize) -> OwnedBuffer<T> {
     transmute(Box::<[T]>::new_zeroed_slice(len).assume_init())
 }
 
-#[derive(Clone, Copy, Default)]
-pub struct InputBuffer<'a, T>(&'a [Cell<T>]);
+pub struct ReadOnly<T: ?Sized>(Cell<T>);
 
-#[derive(Clone, Copy)]
-pub struct Input<'a, T>(&'a Cell<T>);
-
-impl<'a, T: Copy> Input<'a, T> {
-    pub fn get(self) -> T {
-        self.0.get()
+impl<T: ?Sized> ReadOnly<T> {
+    #[inline]
+    pub fn from_cell(cell: &Cell<T>) -> &Self {
+        unsafe { mem::transmute(cell) }
     }
 }
 
-impl<'a, T> InputBuffer<'a, T> {
-    pub fn iter(self) -> impl Iterator<Item = Input<'a, T>> {
-        self.0.iter().map(Input)
-    }
-
-    pub const fn len(self) -> usize {
-        self.0.len()
-    }
-
-    pub const fn is_empty(self) -> bool {
-        self.len() == 0
+impl<T> ReadOnly<[T]> {
+    #[inline]
+    pub fn transpose(&self) -> &[ReadOnly<T>] {
+        unsafe { mem::transmute(self) }
     }
 }
 
-impl<'a, T> From<&'a [Cell<T>]> for InputBuffer<'a, T> {
-    fn from(value: &'a [Cell<T>]) -> Self {
-        Self(value)
+impl<T, const N: usize> ReadOnly<[T; N]> {
+    #[inline]
+    pub fn transpose(&self) -> &[ReadOnly<T>; N] {
+        unsafe { mem::transmute(self) }
     }
 }
 
-#[derive(Clone, Copy, Default)]
-pub struct OutputBuffer<'a, T>(&'a [Cell<T>]);
+impl<T> ReadOnly<T> {
+    #[inline]
+    pub fn from_slice(cell_slice: &[Cell<T>]) -> &[Self] {
+        unsafe { mem::transmute(cell_slice) }
+    }
 
-#[derive(Clone, Copy)]
-pub struct Output<'a, T>(&'a Cell<T>);
-
-impl<'a, T> Output<'a, T> {
-    pub fn get(self) -> T
+    #[inline]
+    pub fn get(&self) -> T
     where
         T: Copy,
     {
         self.0.get()
     }
-
-    pub fn set(self, value: T) {
-        self.0.set(value)
-    }
 }
 
-impl<'a, T> OutputBuffer<'a, T> {
-    pub fn iter(self) -> impl Iterator<Item = Output<'a, T>> {
-        self.0.iter().map(Output)
-    }
-
-    pub const fn len(self) -> usize {
-        self.0.len()
-    }
-
-    pub const fn is_empty(self) -> bool {
-        self.len() == 0
-    }
-
-    pub const fn as_input(self) -> InputBuffer<'a, T> {
-        InputBuffer(self.0)
-    }
-
-    pub fn add<U>(self, left: InputBuffer<'a, U>, right: InputBuffer<'a, U>)
-    where
-        U: Add<Output = T> + Copy,
-    {
-        for (output, (left, right)) in self.iter().zip(left.iter().zip(right.iter())) {
-            output.set(left.get() + right.get())
-        }
-    }
-
-    pub fn copy(self, other: InputBuffer<'a, T>)
-    where
-        T: Copy,
-    {
-        for (output, input) in self.iter().zip(other.iter()) {
-            output.set(input.get())
-        }
+impl<T: SimdElement> ReadOnly<Simd<T, FLOATS_PER_VECTOR>> {
+    #[inline]
+    pub fn split_stereo(&self) -> &[ReadOnly<Simd<T, 2>>; STEREO_VOICES_PER_VECTOR] {
+        ReadOnly::from_cell(split_stereo_cell(&self.0)).transpose()
     }
 }
 
@@ -103,6 +70,7 @@ pub(crate) struct BufferHandle<'a, T> {
 }
 
 impl<'a, T> BufferHandle<'a, T> {
+    #[inline]
     pub(crate) fn parented(
         buffers: &'a [OwnedBuffer<T>],
         parent: &'a BufferIndices<'a, T>,
@@ -113,6 +81,7 @@ impl<'a, T> BufferHandle<'a, T> {
         }
     }
 
+    #[inline]
     pub(crate) fn toplevel(buffers: &'a [OwnedBuffer<T>]) -> Self {
         Self {
             parent: None,
@@ -120,31 +89,33 @@ impl<'a, T> BufferHandle<'a, T> {
         }
     }
 
+    #[inline]
     pub(crate) fn get_output_buffer(
         &'a self,
         buf_index: OutputBufferIndex,
         start: usize,
         len: usize,
-    ) -> Option<OutputBuffer<'a, T>> {
+    ) -> Option<&'a [Cell<T>]> {
         match buf_index {
             OutputBufferIndex::Global(i) => self.parent.as_ref().unwrap().get_output(i, start, len),
-            OutputBufferIndex::Intermediate(i) => Some(OutputBuffer(
-                &self.buffers[i].as_slice_of_cells()[start..start + len],
-            )),
+            OutputBufferIndex::Intermediate(i) => {
+                Some(&self.buffers[i].as_slice_of_cells()[start..start + len])
+            }
         }
     }
 
+    #[inline]
     pub(crate) fn get_input_buffer(
         &'a self,
         buf_index: BufferIndex,
         start: usize,
         len: usize,
-    ) -> Option<InputBuffer<'a, T>> {
+    ) -> Option<&'a [ReadOnly<T>]> {
         match buf_index {
             BufferIndex::GlobalInput(i) => self.parent.as_ref().unwrap().get_input(i, start, len),
             BufferIndex::Output(buf) => self
                 .get_output_buffer(buf, start, len)
-                .map(OutputBuffer::as_input),
+                .map(ReadOnly::from_slice),
         }
     }
 }
@@ -169,22 +140,27 @@ pub struct BufferIndices<'a, T> {
 }
 
 impl<'a, T> BufferIndices<'a, T> {
+    #[inline]
     pub(crate) fn with_handle(buffer_handle: BufferHandle<'a, T>) -> Self {
         Self::with_handle_and_io(buffer_handle, &[], &[])
     }
 
+    #[inline]
     pub(crate) fn set_inputs(&mut self, inputs: &'a [Option<BufferIndex>]) {
         self.inputs = inputs;
     }
 
+    #[inline]
     pub(crate) fn set_outputs(&mut self, outputs: &'a [Option<OutputBufferIndex>]) {
         self.outputs = outputs;
     }
 
+    #[inline]
     pub(crate) fn set_handle(&mut self, buffer_handle: BufferHandle<'a, T>) {
         self.handle = buffer_handle;
     }
 
+    #[inline]
     pub(crate) fn with_handle_and_io(
         handle: BufferHandle<'a, T>,
         inputs: &'a [Option<BufferIndex>],
@@ -197,24 +173,26 @@ impl<'a, T> BufferIndices<'a, T> {
         }
     }
 
+    #[inline]
     pub(crate) fn get_input(
         &'a self,
         index: usize,
         start: usize,
         len: usize,
-    ) -> Option<InputBuffer<'a, T>> {
+    ) -> Option<&'a [ReadOnly<T>]> {
         self.inputs.get(index).and_then(|maybe_buf_index| {
             maybe_buf_index
                 .and_then(|buf_index| self.handle.get_input_buffer(buf_index, start, len))
         })
     }
 
+    #[inline]
     pub(crate) fn get_output(
         &'a self,
         index: usize,
         start: usize,
         len: usize,
-    ) -> Option<OutputBuffer<'a, T>> {
+    ) -> Option<&'a [Cell<T>]> {
         self.outputs.get(index).and_then(|maybe_buf_index| {
             maybe_buf_index
                 .and_then(|buf_index| self.handle.get_output_buffer(buf_index, start, len))
@@ -256,11 +234,11 @@ impl<'a, T> Buffers<'a, T> {
         &self.indices
     }
 
-    pub fn get_input(&'a self, index: usize) -> Option<InputBuffer<'a, T>> {
+    pub fn get_input(&'a self, index: usize) -> Option<&'a [ReadOnly<T>]> {
         self.indices.get_input(index, self.start, self.len.get())
     }
 
-    pub fn get_output(&'a self, index: usize) -> Option<OutputBuffer<'a, T>> {
+    pub fn get_output(&'a self, index: usize) -> Option<&'a [Cell<T>]> {
         self.indices.get_output(index, self.start, self.len.get())
     }
 }
