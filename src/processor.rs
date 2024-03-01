@@ -46,7 +46,7 @@ pub trait Processor {
         &mut self,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
-        params: Params,
+        params: &Params,
     ) {
     }
 
@@ -293,7 +293,7 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
         &mut self,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
-        params: Params,
+        params: &Params,
     ) {
         self.as_mut()
             .set_all_params(cluster_idx, voice_mask, params);
