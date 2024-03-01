@@ -125,13 +125,6 @@ impl AudioGraphIO {
             .filter_map(|(i, maybe_io)| maybe_io.as_ref().map(|io| (i, io)))
     }
 
-    pub(super) fn iter_mut_processor_io(&mut self) -> impl Iterator<Item = (usize, &mut NodeIO)> {
-        self.processors
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, maybe_io)| maybe_io.as_mut().map(|io| (i, io)))
-    }
-
     pub(super) fn get_node(&self, index: NodeIndex) -> Option<&NodeIO> {
         match index {
             NodeIndex::Global => Some(&self.global),

@@ -1,19 +1,17 @@
-use simd_util::{simd::num::SimdFloat, Float};
-
-use crate::buffer::new_owned_buffer;
+use simd_util::{simd::{f32x2, num::SimdFloat}, splat_stereo, Float};
 
 use super::{
     audio_graph::{AudioGraph, ProcessTask},
-    buffer::{BufferHandle, Buffers, OwnedBuffer},
+    buffer::{BufferHandle, Buffers, OwnedBuffer, new_owned_buffer, BufferIndices},
 };
 
 use core::{any::Any, iter, mem, ops::Add};
 
-pub struct Params;
+pub struct Params(pub Box<[f32x2]>);
 
 impl Params {
-    pub fn get_param(&self, param_id: u64) -> Float {
-        Float::splat(0.0)
+    pub fn get_param(&self, param_id: u64) -> Option<Float> {
+        self.0.get(param_id as usize).copied().map(splat_stereo)
     }
 }
 
@@ -201,12 +199,12 @@ where
                     inputs,
                     outputs,
                 } => {
+                    let indices = BufferIndices::new(handle, inputs, outputs);
+
                     let bufs = Buffers::new(
                         buffers.start(),
                         buffers.buffer_size(),
-                        handle,
-                        inputs.as_ref(),
-                        outputs.as_ref(),
+                        indices,
                     );
                     self.processors[*index].as_mut().unwrap().process(
                         bufs,

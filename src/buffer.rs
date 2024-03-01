@@ -64,14 +64,14 @@ impl<T: SimdElement> ReadOnly<Simd<T, FLOATS_PER_VECTOR>> {
 }
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct BufferHandle<'a, T> {
+pub struct BufferHandle<'a, T> {
     parent: Option<&'a BufferIndices<'a, T>>,
     buffers: &'a [OwnedBuffer<T>],
 }
 
 impl<'a, T> BufferHandle<'a, T> {
     #[inline]
-    pub(crate) fn parented(
+    pub fn parented(
         buffers: &'a [OwnedBuffer<T>],
         parent: &'a BufferIndices<'a, T>,
     ) -> Self {
@@ -82,7 +82,7 @@ impl<'a, T> BufferHandle<'a, T> {
     }
 
     #[inline]
-    pub(crate) fn toplevel(buffers: &'a [OwnedBuffer<T>]) -> Self {
+    pub fn toplevel(buffers: &'a [OwnedBuffer<T>]) -> Self {
         Self {
             parent: None,
             buffers,
@@ -140,28 +140,8 @@ pub struct BufferIndices<'a, T> {
 }
 
 impl<'a, T> BufferIndices<'a, T> {
-    #[inline]
-    pub(crate) fn with_handle(buffer_handle: BufferHandle<'a, T>) -> Self {
-        Self::with_handle_and_io(buffer_handle, &[], &[])
-    }
 
-    #[inline]
-    pub(crate) fn set_inputs(&mut self, inputs: &'a [Option<BufferIndex>]) {
-        self.inputs = inputs;
-    }
-
-    #[inline]
-    pub(crate) fn set_outputs(&mut self, outputs: &'a [Option<OutputBufferIndex>]) {
-        self.outputs = outputs;
-    }
-
-    #[inline]
-    pub(crate) fn set_handle(&mut self, buffer_handle: BufferHandle<'a, T>) {
-        self.handle = buffer_handle;
-    }
-
-    #[inline]
-    pub(crate) fn with_handle_and_io(
+    pub fn new(
         handle: BufferHandle<'a, T>,
         inputs: &'a [Option<BufferIndex>],
         outputs: &'a [Option<OutputBufferIndex>],
@@ -208,17 +188,12 @@ pub struct Buffers<'a, T> {
 }
 
 impl<'a, T> Buffers<'a, T> {
-    pub(crate) fn new(
-        start: usize,
-        len: NonZeroUsize,
-        handle: BufferHandle<'a, T>,
-        inputs: &'a [Option<BufferIndex>],
-        outputs: &'a [Option<OutputBufferIndex>],
-    ) -> Self {
+
+    pub fn new(start: usize, len: NonZeroUsize, indices: BufferIndices<'a, T>) -> Self {
         Self {
             start,
             len,
-            indices: BufferIndices::with_handle_and_io(handle, inputs, outputs),
+            indices,
         }
     }
 
