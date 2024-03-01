@@ -65,7 +65,7 @@ pub trait Processor {
     fn move_state(&mut self, from: (usize, usize), to: (usize, usize)) {}
 }
 
-pub(crate) fn new_v_float_buffer<T: SimdFloat>(len: usize) -> OwnedBuffer<T> {
+pub fn new_vfloat_buffer<T: SimdFloat>(len: usize) -> OwnedBuffer<T> {
     // SAFETY: f32s and thus Simd<f32, N>s are safely zeroable
     unsafe { new_owned_buffer(len) }
 }
@@ -133,7 +133,7 @@ impl<T: Processor> AudioGraphProcessor<T> {
         self.replace_schedule(schedule);
 
         self.replace_buffers(
-            iter::repeat_with(|| new_v_float_buffer(buffer_size))
+            iter::repeat_with(|| new_vfloat_buffer(buffer_size))
                 .take(num_buffers)
                 .collect(),
         );
@@ -219,7 +219,7 @@ where
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {
         self.buffers
             .iter_mut()
-            .for_each(|buf| *buf = new_v_float_buffer(max_buffer_size));
+            .for_each(|buf| *buf = new_vfloat_buffer(max_buffer_size));
 
         self.processors()
             .for_each(|proc| proc.initialize(sr, max_buffer_size, max_num_clusters))
