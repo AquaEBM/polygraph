@@ -2,19 +2,14 @@ use simd_util::simd::num::SimdFloat;
 
 use super::{
     audio_graph::{AudioGraph, ProcessTask},
-    buffer::{BufferHandle, Buffers, OwnedBuffer, new_owned_buffer, BufferIndices},
+    buffer::{new_owned_buffer, BufferHandle, BufferIndices, Buffers, OwnedBuffer},
 };
 
 use core::{any::Any, iter, mem, ops::Add};
 
 #[allow(unused_variables)]
 pub trait Parameters<T: SimdFloat> {
-    fn get_param(
-        &self,
-        param_id: u64,
-        cluster_idx: usize,
-        voice_mask: &T::Mask,
-    ) -> Option<T> {
+    fn get_param(&self, param_id: u64, cluster_idx: usize, voice_mask: &T::Mask) -> Option<T> {
         None
     }
 }
@@ -22,14 +17,10 @@ pub trait Parameters<T: SimdFloat> {
 pub struct ParamsList<T>(pub Box<[Box<[T]>]>);
 
 impl<T: SimdFloat> Parameters<T> for ParamsList<T> {
-
-    fn get_param(
-        &self,
-        param_id: u64,
-        cluster_idx: usize,
-        _voice_mask: &T::Mask,
-    ) -> Option<T> {
-        self.0.get(cluster_idx).and_then(|params| params.get(param_id as usize).copied())
+    fn get_param(&self, param_id: u64, cluster_idx: usize, _voice_mask: &T::Mask) -> Option<T> {
+        self.0
+            .get(cluster_idx)
+            .and_then(|params| params.get(param_id as usize).copied())
     }
 }
 
@@ -46,7 +37,8 @@ pub trait Processor {
         buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
-    ) {}
+    ) {
+    }
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {}
 
@@ -56,21 +48,24 @@ pub trait Processor {
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
         param_id: u64,
         norm_val: Self::Sample,
-    ) {}
+    ) {
+    }
 
     fn set_all_params(
         &mut self,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
         params: &dyn Parameters<Self::Sample>,
-    ) {}
+    ) {
+    }
 
     fn set_voice_note(
         &mut self,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
         note: Self::Sample,
-    ) {}
+    ) {
+    }
 
     fn custom_event(&mut self, event: &mut dyn Any) {}
 
@@ -215,11 +210,7 @@ where
                 } => {
                     let indices = BufferIndices::new(handle, inputs, outputs);
 
-                    let bufs = Buffers::new(
-                        buffers.start(),
-                        buffers.buffer_size(),
-                        indices,
-                    );
+                    let bufs = Buffers::new(buffers.start(), buffers.buffer_size(), indices);
                     self.processors[*index].as_mut().unwrap().process(
                         bufs,
                         cluster_idx,

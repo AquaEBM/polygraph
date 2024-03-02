@@ -71,10 +71,7 @@ pub struct BufferHandle<'a, T> {
 
 impl<'a, T> BufferHandle<'a, T> {
     #[inline]
-    pub fn parented(
-        buffers: &'a [OwnedBuffer<T>],
-        parent: &'a BufferIndices<'a, T>,
-    ) -> Self {
+    pub fn parented(buffers: &'a [OwnedBuffer<T>], parent: &'a BufferIndices<'a, T>) -> Self {
         Self {
             parent: Some(parent),
             buffers,
@@ -140,7 +137,6 @@ pub struct BufferIndices<'a, T> {
 }
 
 impl<'a, T> BufferIndices<'a, T> {
-
     pub fn new(
         handle: BufferHandle<'a, T>,
         inputs: &'a [Option<BufferIndex>],
@@ -188,7 +184,6 @@ pub struct Buffers<'a, T> {
 }
 
 impl<'a, T> Buffers<'a, T> {
-
     pub fn new(start: usize, len: NonZeroUsize, indices: BufferIndices<'a, T>) -> Self {
         Self {
             start,
