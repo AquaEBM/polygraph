@@ -1,4 +1,4 @@
-use simd_util::{simd::num::SimdFloat, Float};
+use simd_util::simd::num::SimdFloat;
 
 use super::{
     audio_graph::{AudioGraph, ProcessTask},
@@ -7,11 +7,29 @@ use super::{
 
 use core::{any::Any, iter, mem, ops::Add};
 
-pub struct Params(pub Box<[Float]>);
+#[allow(unused_variables)]
+pub trait Parameters<T: SimdFloat> {
+    fn get_param(
+        &self,
+        param_id: u64,
+        cluster_idx: usize,
+        voice_mask: &T::Mask,
+    ) -> Option<T> {
+        None
+    }
+}
 
-impl Params {
-    pub fn get_param(&self, param_id: u64) -> Option<Float> {
-        self.0.get(param_id as usize).copied()
+pub struct ParamsList<T>(pub Box<[Box<[T]>]>);
+
+impl<T: SimdFloat> Parameters<T> for ParamsList<T> {
+
+    fn get_param(
+        &self,
+        param_id: u64,
+        cluster_idx: usize,
+        _voice_mask: &T::Mask,
+    ) -> Option<T> {
+        self.0.get(cluster_idx).and_then(|params| params.get(param_id as usize).copied())
     }
 }
 
@@ -28,8 +46,7 @@ pub trait Processor {
         buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
-    ) {
-    }
+    ) {}
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {}
 
@@ -39,24 +56,21 @@ pub trait Processor {
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
         param_id: u64,
         norm_val: Self::Sample,
-    ) {
-    }
+    ) {}
 
     fn set_all_params(
         &mut self,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
-        params: &Params,
-    ) {
-    }
+        params: &dyn Parameters<Self::Sample>,
+    ) {}
 
     fn set_voice_note(
         &mut self,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
         note: Self::Sample,
-    ) {
-    }
+    ) {}
 
     fn custom_event(&mut self, event: &mut dyn Any) {}
 
@@ -66,7 +80,7 @@ pub trait Processor {
 }
 
 pub fn new_vfloat_buffer<T: SimdFloat>(len: usize) -> OwnedBuffer<T> {
-    // SAFETY: f32s and thus Simd<f32, N>s are safely zeroable
+    // SAFETY: `f32`s and thus `Simd<f32, N>`s are safely zeroable
     unsafe { new_owned_buffer(len) }
 }
 
@@ -293,7 +307,7 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
         &mut self,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
-        params: &Params,
+        params: &dyn Parameters<Self::Sample>,
     ) {
         self.as_mut()
             .set_all_params(cluster_idx, voice_mask, params);
