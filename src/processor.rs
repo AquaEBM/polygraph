@@ -1,4 +1,4 @@
-use simd_util::{simd::{f32x2, num::SimdFloat}, splat_stereo, Float};
+use simd_util::{simd::num::SimdFloat, Float};
 
 use super::{
     audio_graph::{AudioGraph, ProcessTask},
