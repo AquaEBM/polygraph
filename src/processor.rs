@@ -7,11 +7,11 @@ use super::{
 
 use core::{any::Any, iter, mem, ops::Add};
 
-pub struct Params(pub Box<[f32x2]>);
+pub struct Params(pub Box<[Float]>);
 
 impl Params {
     pub fn get_param(&self, param_id: u64) -> Option<Float> {
-        self.0.get(param_id as usize).copied().map(splat_stereo)
+        self.0.get(param_id as usize).copied()
     }
 }
 
