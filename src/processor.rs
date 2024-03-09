@@ -63,7 +63,7 @@ pub trait Processor {
         &mut self,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
-        note: Self::Sample,
+        note: &<Self::Sample as SimdFloat>::Bits,
     ) {
     }
 
@@ -243,10 +243,10 @@ where
         &mut self,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
-        note: Self::Sample,
+        note: &<Self::Sample as SimdFloat>::Bits,
     ) {
         self.processors()
-            .for_each(|proc| proc.set_voice_note(cluster_idx, voice_mask, note))
+            .for_each(move |proc| proc.set_voice_note(cluster_idx, voice_mask, note))
     }
 }
 
@@ -308,7 +308,7 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
         &mut self,
         cluster_idx: usize,
         voice_mask: &<Self::Sample as SimdFloat>::Mask,
-        note: Self::Sample,
+        note: &<Self::Sample as SimdFloat>::Bits,
     ) {
         self.as_mut().set_voice_note(cluster_idx, voice_mask, note);
     }
