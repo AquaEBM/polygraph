@@ -1,4 +1,4 @@
-#![feature(portable_simd, new_uninit)]
+#![feature(portable_simd, new_uninit, array_chunks)]
 
 pub mod buffer;
 
