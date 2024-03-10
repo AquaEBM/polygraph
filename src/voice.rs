@@ -1,4 +1,4 @@
-use core::mem;
+use core::{array, mem};
 
 use simd_util::{
     simd::{num::SimdFloat, LaneCount, SupportedLaneCount},
@@ -37,6 +37,7 @@ pub trait VoiceManager<S: SimdFloat> {
     fn note_free(&mut self, note: u8);
     fn flush_events(&mut self, events: &mut Vec<VoiceEvent<S>>);
     fn set_max_polyphony(&mut self, max_num_clusters: usize);
+    fn get_active_voices(&self, cluster_idx: usize) -> S::Mask;
 }
 
 pub struct StackVoiceManager<const N: usize>
@@ -224,5 +225,9 @@ where
         self.mask_cache = vec![TMask::splat(false); max_num_clusters];
         self.note_cache = vec![UInt::splat(128); max_num_clusters];
         self.vel_cache = vec![Float::splat(0.0); max_num_clusters];
+    }
+
+    fn get_active_voices(&self, cluster_idx: usize) -> TMask<N> {
+        TMask::from_array(array::from_fn(|i| cluster_idx + i / 2 < self.voices.len()))
     }
 }
