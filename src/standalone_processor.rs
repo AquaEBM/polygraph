@@ -1,0 +1,179 @@
+extern crate alloc;
+
+use core::{cell::Cell, iter, num::NonZeroUsize, ops::AddAssign};
+
+use super::{
+    buffer::{BufferHandle, BufferIndex, BufferIndices, Buffers, OutputBufferIndex, OwnedBuffer},
+    processor::{new_vfloat_buffer, Processor},
+    simd_util::{simd::num::SimdFloat, MaskAny},
+    voice::{VoiceEvent, VoiceManager},
+};
+
+pub struct StandaloneProcessor<T: Processor, V> {
+    output_buf_indices: Box<[Option<OutputBufferIndex>]>,
+    max_num_clusters: usize,
+    main_bufs: Box<[OwnedBuffer<T::Sample>]>,
+    scratch_bufs: Box<[OwnedBuffer<T::Sample>]>,
+    processor: T,
+    vm: V,
+    events_buffer: Vec<VoiceEvent<T::Sample>>,
+}
+
+impl<T: Processor + Default, V: Default> Default for StandaloneProcessor<T, V> {
+    fn default() -> Self {
+        let proc = T::default();
+
+        let (_, o) = proc.audio_io_layout();
+
+        let empty_buf = || new_vfloat_buffer::<T::Sample>(0);
+
+        let main_bufs = iter::repeat_with(empty_buf).take(o).collect();
+        let scratch_bufs = iter::repeat_with(empty_buf).take(o).collect();
+
+        let output_buf_indices = (0..o)
+            .map(OutputBufferIndex::Intermediate)
+            .map(Some)
+            .collect();
+
+        Self {
+            output_buf_indices,
+            max_num_clusters: 0,
+            main_bufs,
+            scratch_bufs,
+            processor: Default::default(),
+            vm: V::default(),
+            events_buffer: Default::default(),
+        }
+    }
+}
+
+impl<T, V> StandaloneProcessor<T, V>
+where
+    T: Processor,
+    V: VoiceManager<T::Sample>,
+{
+    pub fn note_on(&mut self, note: u8, vel: f32) {
+        self.vm.note_on(note, vel)
+    }
+
+    pub fn note_off(&mut self, note: u8, vel: f32) {
+        self.vm.note_off(note, vel)
+    }
+
+    pub fn note_free(&mut self, note: u8) {
+        self.vm.note_free(note)
+    }
+
+    fn buffer_handle<'a>(
+        bufs: &'a [OwnedBuffer<T::Sample>],
+        input_indices: &'a [Option<BufferIndex>],
+        output_indices: &'a [Option<OutputBufferIndex>],
+        start: usize,
+        num_samples: NonZeroUsize,
+    ) -> Buffers<'a, T::Sample> {
+        let handle = BufferHandle::toplevel(bufs);
+
+        let indices = BufferIndices::new(handle, input_indices, output_indices);
+
+        Buffers::new(start, num_samples, indices)
+    }
+
+    pub fn process(&mut self, current_sample: usize, num_samples: NonZeroUsize)
+    where
+        <T::Sample as SimdFloat>::Mask: Clone + MaskAny,
+        T::Sample: AddAssign,
+    {
+        self.vm.flush_events(&mut self.events_buffer);
+
+        for event in self.events_buffer.drain(..) {
+            match event {
+                VoiceEvent::Activate {
+                    note,
+                    velocity,
+                    cluster_idx,
+                    mask,
+                } => {
+                    self.processor.reset(cluster_idx, mask.clone());
+                    self.processor
+                        .activate_voices(cluster_idx, mask, velocity, note);
+                }
+
+                VoiceEvent::Deactivate {
+                    velocity,
+                    cluster_idx,
+                    mask,
+                } => {
+                    self.processor
+                        .deactivate_voices(cluster_idx, mask, velocity);
+                }
+
+                VoiceEvent::Move { from, to } => self.processor.move_state(from, to),
+
+                _ => (),
+            };
+
+            let mut voice_mask = self.vm.get_voice_mask(0);
+
+            if voice_mask.any() {
+                self.processor.process(
+                    Self::buffer_handle(
+                        &self.main_bufs,
+                        &[],
+                        &self.output_buf_indices,
+                        current_sample,
+                        num_samples,
+                    ),
+                    0,
+                    voice_mask,
+                );
+            }
+
+            for i in 1..self.max_num_clusters {
+                voice_mask = self.vm.get_voice_mask(i);
+                if voice_mask.any() {
+                    self.processor.process(
+                        Self::buffer_handle(
+                            &self.scratch_bufs,
+                            &[],
+                            &self.output_buf_indices,
+                            current_sample,
+                            num_samples,
+                        ),
+                        i,
+                        voice_mask,
+                    );
+                }
+
+                for (main_buf, scratch_buf) in
+                    self.main_bufs.iter_mut().zip(self.scratch_bufs.iter_mut())
+                {
+                    for (main_sample, scratch_sample) in Cell::get_mut(main_buf.as_mut())
+                        .iter_mut()
+                        .zip(Cell::get_mut(scratch_buf.as_mut()))
+                    {
+                        *main_sample += *scratch_sample;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {
+
+        self.processor.initialize(sr, max_buffer_size, max_num_clusters);
+        
+        self.vm.set_max_polyphony(max_num_clusters);
+        
+        for buf in self.main_bufs.iter_mut().chain(self.scratch_bufs.iter_mut()) {
+            *buf = new_vfloat_buffer(max_buffer_size);
+        }
+
+        self.events_buffer = Vec::with_capacity(512);
+
+        self.max_num_clusters = max_num_clusters;
+    }
+
+    pub fn get_buffers(&mut self) -> &mut [OwnedBuffer<T::Sample>] {
+        &mut self.main_bufs
+    }
+}

@@ -36,7 +36,7 @@ pub trait Processor {
         &mut self,
         buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
     ) {
     }
 
@@ -45,7 +45,7 @@ pub trait Processor {
     fn set_param(
         &mut self,
         cluster_idx: usize,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
         param_id: u64,
         norm_val: Self::Sample,
     ) {
@@ -54,22 +54,31 @@ pub trait Processor {
     fn set_all_params(
         &mut self,
         cluster_idx: usize,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
         params: &dyn Parameters<Self::Sample>,
     ) {
     }
 
-    fn set_voice_note(
+    fn activate_voices(
         &mut self,
         cluster_idx: usize,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
-        note: &<Self::Sample as SimdFloat>::Bits,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
+        velocity: Self::Sample,
+        note: <Self::Sample as SimdFloat>::Bits,
+    ) {
+    }
+
+    fn deactivate_voices(
+        &mut self,
+        cluster_idx: usize,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
+        velocity: Self::Sample,
     ) {
     }
 
     fn custom_event(&mut self, event: &mut dyn Any) {}
 
-    fn reset(&mut self, cluster_idx: usize, voice_mask: &<Self::Sample as SimdFloat>::Mask) {}
+    fn reset(&mut self, cluster_idx: usize, voice_mask: <Self::Sample as SimdFloat>::Mask) {}
 
     fn move_state(&mut self, from: (usize, usize), to: (usize, usize)) {}
 }
@@ -156,6 +165,8 @@ impl<T: Processor> AudioGraphProcessor<T> {
 impl<T: Processor> Processor for AudioGraphProcessor<T>
 where
     T::Sample: Add<Output = T::Sample>,
+    <T::Sample as SimdFloat>::Mask: Clone,
+    <T::Sample as SimdFloat>::Bits: Clone,
 {
     type Sample = T::Sample;
 
@@ -167,7 +178,7 @@ where
         &mut self,
         buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
     ) {
         let len = buffers.buffer_size().get();
         let start = buffers.start();
@@ -214,7 +225,7 @@ where
                     self.processors[*index].as_mut().unwrap().process(
                         bufs,
                         cluster_idx,
-                        voice_mask,
+                        voice_mask.clone(),
                     );
                 }
             }
@@ -230,23 +241,35 @@ where
             .for_each(|proc| proc.initialize(sr, max_buffer_size, max_num_clusters))
     }
 
-    fn reset(&mut self, cluster_idx: usize, voice_mask: &<Self::Sample as SimdFloat>::Mask) {
+    fn reset(&mut self, cluster_idx: usize, voice_mask: <Self::Sample as SimdFloat>::Mask) {
         self.processors()
-            .for_each(|proc| proc.reset(cluster_idx, voice_mask))
+            .for_each(|proc| proc.reset(cluster_idx, voice_mask.clone()))
     }
 
     fn move_state(&mut self, from: (usize, usize), to: (usize, usize)) {
         self.processors().for_each(|proc| proc.move_state(from, to))
     }
 
-    fn set_voice_note(
+    fn activate_voices(
         &mut self,
         cluster_idx: usize,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
-        note: &<Self::Sample as SimdFloat>::Bits,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
+        velocity: Self::Sample,
+        note: <Self::Sample as SimdFloat>::Bits,
+    ) {
+        self.processors().for_each(|proc| {
+            proc.activate_voices(cluster_idx, voice_mask.clone(), velocity, note.clone())
+        })
+    }
+
+    fn deactivate_voices(
+        &mut self,
+        cluster_idx: usize,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
+        velocity: Self::Sample,
     ) {
         self.processors()
-            .for_each(move |proc| proc.set_voice_note(cluster_idx, voice_mask, note))
+            .for_each(|proc| proc.deactivate_voices(cluster_idx, voice_mask.clone(), velocity))
     }
 }
 
@@ -261,7 +284,7 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
         &mut self,
         buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
     ) {
         self.as_mut().process(buffers, cluster_idx, voice_mask);
     }
@@ -275,7 +298,7 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
         self.as_mut().custom_event(event);
     }
 
-    fn reset(&mut self, cluster_idx: usize, voice_mask: &<Self::Sample as SimdFloat>::Mask) {
+    fn reset(&mut self, cluster_idx: usize, voice_mask: <Self::Sample as SimdFloat>::Mask) {
         self.as_mut().reset(cluster_idx, voice_mask);
     }
 
@@ -286,7 +309,7 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
     fn set_param(
         &mut self,
         cluster_idx: usize,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
         param_id: u64,
         norm_val: Self::Sample,
     ) {
@@ -297,19 +320,31 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
     fn set_all_params(
         &mut self,
         cluster_idx: usize,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
         params: &dyn Parameters<Self::Sample>,
     ) {
         self.as_mut()
             .set_all_params(cluster_idx, voice_mask, params);
     }
 
-    fn set_voice_note(
+    fn activate_voices(
         &mut self,
         cluster_idx: usize,
-        voice_mask: &<Self::Sample as SimdFloat>::Mask,
-        note: &<Self::Sample as SimdFloat>::Bits,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
+        velocity: Self::Sample,
+        note: <Self::Sample as SimdFloat>::Bits,
     ) {
-        self.as_mut().set_voice_note(cluster_idx, voice_mask, note);
+        self.as_mut()
+            .activate_voices(cluster_idx, voice_mask, velocity, note);
+    }
+
+    fn deactivate_voices(
+        &mut self,
+        cluster_idx: usize,
+        voice_mask: <Self::Sample as SimdFloat>::Mask,
+        velocity: Self::Sample,
+    ) {
+        self.as_mut()
+            .deactivate_voices(cluster_idx, voice_mask, velocity)
     }
 }

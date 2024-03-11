@@ -22,7 +22,7 @@ pub struct ReadOnly<T: ?Sized>(Cell<T>);
 
 impl<T: ?Sized> ReadOnly<T> {
     #[inline]
-    pub fn from_cell(cell: &Cell<T>) -> &Self {
+    pub fn from_cell_ref(cell: &Cell<T>) -> &Self {
         unsafe { mem::transmute(cell) }
     }
 }
@@ -43,6 +43,11 @@ impl<T, const N: usize> ReadOnly<[T; N]> {
 
 impl<T> ReadOnly<T> {
     #[inline]
+    pub fn from_cell(cell: Cell<T>) -> Self {
+        Self(cell)
+    }
+
+    #[inline]
     pub fn from_slice(cell_slice: &[Cell<T>]) -> &[Self] {
         unsafe { mem::transmute(cell_slice) }
     }
@@ -58,8 +63,15 @@ impl<T> ReadOnly<T> {
 
 impl<T: SimdElement> ReadOnly<Simd<T, FLOATS_PER_VECTOR>> {
     #[inline]
-    pub fn split_stereo(&self) -> &[ReadOnly<Simd<T, 2>>; STEREO_VOICES_PER_VECTOR] {
-        ReadOnly::from_cell(split_stereo_cell(&self.0)).transpose()
+    pub fn split_stereo(&self) -> &ReadOnly<[Simd<T, 2>; STEREO_VOICES_PER_VECTOR]> {
+        ReadOnly::from_cell_ref(split_stereo_cell(&self.0))
+    }
+}
+
+impl<T: SimdElement> ReadOnly<[Simd<T, FLOATS_PER_VECTOR>]> {
+    #[inline]
+    pub fn split_stereo_slice(&self) -> &[[ReadOnly<Simd<T, 2>> ; STEREO_VOICES_PER_VECTOR]] {
+        unsafe { mem::transmute(self) }
     }
 }
 
@@ -87,7 +99,7 @@ impl<'a, T> BufferHandle<'a, T> {
     }
 
     #[inline]
-    pub(crate) fn get_output_buffer(
+    pub fn get_output_buffer(
         &'a self,
         buf_index: OutputBufferIndex,
         start: usize,
@@ -102,7 +114,7 @@ impl<'a, T> BufferHandle<'a, T> {
     }
 
     #[inline]
-    pub(crate) fn get_input_buffer(
+    pub fn get_input_buffer(
         &'a self,
         buf_index: BufferIndex,
         start: usize,
@@ -150,7 +162,7 @@ impl<'a, T> BufferIndices<'a, T> {
     }
 
     #[inline]
-    pub(crate) fn get_input(
+    pub fn get_input(
         &'a self,
         index: usize,
         start: usize,
@@ -163,12 +175,7 @@ impl<'a, T> BufferIndices<'a, T> {
     }
 
     #[inline]
-    pub(crate) fn get_output(
-        &'a self,
-        index: usize,
-        start: usize,
-        len: usize,
-    ) -> Option<&'a [Cell<T>]> {
+    pub fn get_output(&'a self, index: usize, start: usize, len: usize) -> Option<&'a [Cell<T>]> {
         self.outputs.get(index).and_then(|maybe_buf_index| {
             maybe_buf_index
                 .and_then(|buf_index| self.handle.get_output_buffer(buf_index, start, len))
@@ -200,7 +207,7 @@ impl<'a, T> Buffers<'a, T> {
         self.len
     }
 
-    pub(crate) fn indices(&'a self) -> &'a BufferIndices<'a, T> {
+    pub fn indices(&'a self) -> &'a BufferIndices<'a, T> {
         &self.indices
     }
 

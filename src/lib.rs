@@ -11,3 +11,5 @@ pub mod audio_graph;
 pub use simd_util;
 
 pub mod voice;
+
+pub mod standalone_processor;

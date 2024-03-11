@@ -37,17 +37,18 @@ pub trait VoiceManager<S: SimdFloat> {
     fn note_free(&mut self, note: u8);
     fn flush_events(&mut self, events: &mut Vec<VoiceEvent<S>>);
     fn set_max_polyphony(&mut self, max_num_clusters: usize);
-    fn get_active_voices(&self, cluster_idx: usize) -> S::Mask;
+    fn get_voice_mask(&self, cluster_idx: usize) -> S::Mask;
 }
 
+#[derive(Default)]
 pub struct StackVoiceManager<const N: usize>
 where
     LaneCount<N>: SupportedLaneCount,
 {
     voices: Vec<u8>,
-    mask_cache: Vec<TMask<N>>,
-    vel_cache: Vec<Float<N>>,
-    note_cache: Vec<UInt<N>>,
+    mask_cache: Box<[TMask<N>]>,
+    vel_cache: Box<[Float<N>]>,
+    note_cache: Box<[UInt<N>]>,
     add_pending: Vec<(u8, f32)>,
     deactivate_pending: Vec<(u8, f32)>,
     free_pending: Vec<u8>,
@@ -218,16 +219,23 @@ where
     fn set_max_polyphony(&mut self, max_num_clusters: usize) {
         let stereo_voices_per_vector = N / 2;
         let total_num_voices = max_num_clusters * stereo_voices_per_vector;
+
         self.voices = Vec::with_capacity(total_num_voices);
         self.deactivate_pending = Vec::with_capacity(total_num_voices);
         self.free_pending = Vec::with_capacity(total_num_voices);
         self.add_pending = Vec::with_capacity(total_num_voices);
-        self.mask_cache = vec![TMask::splat(false); max_num_clusters];
-        self.note_cache = vec![UInt::splat(128); max_num_clusters];
-        self.vel_cache = vec![Float::splat(0.0); max_num_clusters];
+
+        self.mask_cache = unsafe { Box::new_uninit_slice(max_num_clusters).assume_init() };
+        self.mask_cache.fill(TMask::splat(false));
+
+        self.vel_cache = unsafe { Box::new_uninit_slice(max_num_clusters).assume_init() };
+        self.vel_cache.fill(Float::splat(0.0));
+
+        self.note_cache = unsafe { Box::new_uninit_slice(max_num_clusters).assume_init() };
+        self.note_cache.fill(UInt::splat(128));
     }
 
-    fn get_active_voices(&self, cluster_idx: usize) -> TMask<N> {
+    fn get_voice_mask(&self, cluster_idx: usize) -> TMask<N> {
         TMask::from_array(array::from_fn(|i| cluster_idx + i / 2 < self.voices.len()))
     }
 }
