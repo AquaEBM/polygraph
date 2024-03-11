@@ -9,7 +9,7 @@ use core::{any::Any, iter, mem, ops::Add};
 
 #[allow(unused_variables)]
 pub trait Parameters<T: SimdFloat> {
-    fn get_param(&self, param_id: u64, cluster_idx: usize, voice_mask: &T::Mask) -> Option<T> {
+    fn get_param(&self, param_id: u64, cluster_idx: usize, voice_mask: T::Mask) -> Option<T> {
         None
     }
 }
@@ -17,7 +17,7 @@ pub trait Parameters<T: SimdFloat> {
 pub struct ParamsList<T>(pub Box<[Box<[T]>]>);
 
 impl<T: SimdFloat> Parameters<T> for ParamsList<T> {
-    fn get_param(&self, param_id: u64, cluster_idx: usize, _voice_mask: &T::Mask) -> Option<T> {
+    fn get_param(&self, param_id: u64, cluster_idx: usize, _voice_mask: T::Mask) -> Option<T> {
         self.0
             .get(cluster_idx)
             .and_then(|params| params.get(param_id as usize).copied())
