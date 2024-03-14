@@ -109,48 +109,48 @@ where
 
                 VoiceEvent::Move { from, to } => self.processor.move_state(from, to),
             };
+        }
 
-            let mut voice_mask = self.vm.get_voice_mask(0);
+        let mut voice_mask = self.vm.get_voice_mask(0);
 
+        if voice_mask.any() {
+            self.processor.process(
+                Self::buffer_handle(
+                    &self.main_bufs,
+                    &[],
+                    &self.output_buf_indices,
+                    current_sample,
+                    num_samples,
+                ),
+                0,
+                voice_mask,
+            );
+        }
+
+        for i in 1..self.max_num_clusters {
+            voice_mask = self.vm.get_voice_mask(i);
             if voice_mask.any() {
                 self.processor.process(
                     Self::buffer_handle(
-                        &self.main_bufs,
+                        &self.scratch_bufs,
                         &[],
                         &self.output_buf_indices,
                         current_sample,
                         num_samples,
                     ),
-                    0,
+                    i,
                     voice_mask,
                 );
             }
 
-            for i in 1..self.max_num_clusters {
-                voice_mask = self.vm.get_voice_mask(i);
-                if voice_mask.any() {
-                    self.processor.process(
-                        Self::buffer_handle(
-                            &self.scratch_bufs,
-                            &[],
-                            &self.output_buf_indices,
-                            current_sample,
-                            num_samples,
-                        ),
-                        i,
-                        voice_mask,
-                    );
-                }
-
-                for (main_buf, scratch_buf) in
-                    self.main_bufs.iter_mut().zip(self.scratch_bufs.iter_mut())
+            for (main_buf, scratch_buf) in
+                self.main_bufs.iter_mut().zip(self.scratch_bufs.iter_mut())
+            {
+                for (main_sample, scratch_sample) in Cell::get_mut(main_buf.as_mut())
+                    .iter_mut()
+                    .zip(Cell::get_mut(scratch_buf.as_mut()))
                 {
-                    for (main_sample, scratch_sample) in Cell::get_mut(main_buf.as_mut())
-                        .iter_mut()
-                        .zip(Cell::get_mut(scratch_buf.as_mut()))
-                    {
-                        *main_sample += *scratch_sample;
-                    }
+                    *main_sample += *scratch_sample;
                 }
             }
         }
