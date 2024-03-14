@@ -14,6 +14,7 @@ pub struct StandaloneProcessor<T: Processor, V> {
     max_num_clusters: usize,
     main_bufs: Box<[OwnedBuffer<T::Sample>]>,
     scratch_bufs: Box<[OwnedBuffer<T::Sample>]>,
+    bufs_processed: bool,
     processor: T,
     vm: V,
     events_buffer: Vec<VoiceEvent<T::Sample>>,
@@ -40,6 +41,7 @@ impl<T: Processor + Default, V: Default> Default for StandaloneProcessor<T, V> {
             max_num_clusters: 0,
             main_bufs,
             scratch_bufs,
+            bufs_processed: false,
             processor: Default::default(),
             vm: V::default(),
             events_buffer: Default::default(),
@@ -111,37 +113,41 @@ where
             };
         }
 
-        let mut voice_mask = self.vm.get_voice_mask(0);
+        let mut cluster_idxs = (0..self.max_num_clusters).filter_map(|cluster_idx| {
+            let mask = self.vm.get_voice_mask(cluster_idx);
+            mask.any().then_some((cluster_idx, mask))
+        });
 
-        if voice_mask.any() {
+        let Some((first_cluster_idx, first_mask)) = cluster_idxs.next() else {
+            return;
+        };
+
+        self.bufs_processed = true;
+
+        self.processor.process(
+            Self::buffer_handle(
+                &self.main_bufs,
+                &[],
+                &self.output_buf_indices,
+                current_sample,
+                num_samples,
+            ),
+            first_cluster_idx,
+            first_mask,
+        );
+
+        for (cluster_idx, mask) in cluster_idxs {
             self.processor.process(
                 Self::buffer_handle(
-                    &self.main_bufs,
+                    &self.scratch_bufs,
                     &[],
                     &self.output_buf_indices,
                     current_sample,
                     num_samples,
                 ),
-                0,
-                voice_mask,
+                cluster_idx,
+                mask,
             );
-        }
-
-        for i in 1..self.max_num_clusters {
-            voice_mask = self.vm.get_voice_mask(i);
-            if voice_mask.any() {
-                self.processor.process(
-                    Self::buffer_handle(
-                        &self.scratch_bufs,
-                        &[],
-                        &self.output_buf_indices,
-                        current_sample,
-                        num_samples,
-                    ),
-                    i,
-                    voice_mask,
-                );
-            }
 
             for (main_buf, scratch_buf) in
                 self.main_bufs.iter_mut().zip(self.scratch_bufs.iter_mut())
@@ -170,12 +176,14 @@ where
             *buf = new_vfloat_buffer(max_buffer_size);
         }
 
-        self.events_buffer = Vec::with_capacity(512);
+        if self.events_buffer.capacity() < 512 {
+            self.events_buffer = Vec::with_capacity(512);
+        }
 
         self.max_num_clusters = max_num_clusters;
     }
 
-    pub fn get_buffers(&mut self) -> &mut [OwnedBuffer<T::Sample>] {
-        &mut self.main_bufs
+    pub fn get_buffers(&mut self) -> Option<&mut [OwnedBuffer<T::Sample>]> {
+        self.bufs_processed.then_some(&mut self.main_bufs)
     }
 }
