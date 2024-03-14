@@ -60,6 +60,10 @@ where
         self.vm.note_off(note, vel)
     }
 
+    pub fn note_free(&mut self, note: u8) {
+        self.vm.note_free(note)
+    }
+
     fn buffer_handle<'a>(
         bufs: &'a [OwnedBuffer<T::Sample>],
         input_indices: &'a [Option<BufferIndex>],
