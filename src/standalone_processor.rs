@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use core::{cell::Cell, iter, num::NonZeroUsize, ops::AddAssign};
+use core::{cell::Cell, iter, mem, num::NonZeroUsize, ops::AddAssign};
 
 use super::{
     buffer::{BufferHandle, BufferIndex, BufferIndices, Buffers, OutputBufferIndex, OwnedBuffer},
@@ -184,6 +184,6 @@ where
     }
 
     pub fn get_buffers(&mut self) -> Option<&mut [OwnedBuffer<T::Sample>]> {
-        self.bufs_processed.then_some(&mut self.main_bufs)
+        mem::take(&mut self.bufs_processed).then_some(&mut self.main_bufs)
     }
 }
