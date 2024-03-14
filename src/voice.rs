@@ -1,4 +1,4 @@
-use core::{array, mem};
+use core::{array, iter, mem};
 
 use simd_util::{
     simd::{num::SimdFloat, LaneCount, SupportedLaneCount},
@@ -20,11 +20,6 @@ pub enum VoiceEvent<S: SimdFloat> {
         mask: S::Mask,
     },
 
-    Free {
-        cluster_idx: usize,
-        mask: S::Mask,
-    },
-
     Move {
         from: (usize, usize),
         to: (usize, usize),
@@ -41,17 +36,71 @@ pub trait VoiceManager<S: SimdFloat> {
 }
 
 #[derive(Default)]
+struct VoiceEventCache<const N: usize>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
+    mask_cache: Box<[TMask<N>]>,
+    vel_cache: Box<[Float<N>]>,
+    note_cache: Box<[UInt<N>]>,
+}
+
+impl<const N: usize> VoiceEventCache<N>
+where
+    LaneCount<N>: SupportedLaneCount,
+{
+    pub fn clear_and_set_capacity(&mut self, num_clusters: usize) {
+        self.mask_cache = iter::repeat(TMask::splat(false))
+            .take(num_clusters)
+            .collect();
+
+        self.vel_cache = iter::repeat(Float::splat(0.0)).take(num_clusters).collect();
+
+        self.note_cache = iter::repeat(UInt::splat(0)).take(num_clusters).collect();
+    }
+
+    pub fn activate_index(&mut self, index: usize, vel: f32, note: Option<u8>) {
+        let v = N / 2;
+        let (i, j) = (index / v, index % v);
+        let j1 = 2 * j;
+        let j2 = j1 + 1;
+
+        let mask = &mut self.mask_cache[i];
+        mask.set(j1, true);
+        mask.set(j2, true);
+
+        let vels = &mut self.vel_cache[i];
+        vels[j1] = vel;
+        vels[j2] = vel;
+
+        if let Some(note) = note {
+            let notes = &mut self.note_cache[i];
+            notes[j1] = note.into();
+            notes[j2] = note.into();
+        }
+    }
+
+    pub fn take_data(&mut self) -> impl Iterator<Item = (usize, TMask<N>, Float<N>, UInt<N>)> + '_ {
+        self.mask_cache
+            .iter_mut()
+            .zip(self.vel_cache.iter_mut())
+            .zip(self.note_cache.iter_mut())
+            .enumerate()
+            .map(|(i, ((mask, vel), note))| (i, mem::take(mask), mem::take(vel), mem::take(note)))
+            .filter(|(_, mask, _, _)| mask.any())
+    }
+}
+
+#[derive(Default)]
 pub struct StackVoiceManager<const N: usize>
 where
     LaneCount<N>: SupportedLaneCount,
 {
     voices: Vec<u8>,
-    mask_cache: Box<[TMask<N>]>,
-    vel_cache: Box<[Float<N>]>,
-    note_cache: Box<[UInt<N>]>,
+    event_cache: VoiceEventCache<N>,
     add_pending: Vec<(u8, f32)>,
-    deactivate_pending: Vec<(u8, f32)>,
     free_pending: Vec<u8>,
+    deactivate_pending: Vec<(u8, f32)>,
 }
 
 fn push_within_capacity_stable<T>(vec: &mut Vec<T>, val: T) -> bool {
@@ -80,159 +129,84 @@ where
 
     fn flush_events(&mut self, events: &mut Vec<VoiceEvent<Float<N>>>) {
         // handle voices scheduled to be deactivated first
-        self.deactivate_pending
-            .drain(..)
-            .filter_map(|(note, vel)| {
-                self.voices
-                    .iter()
-                    .position(|&note_id| note_id == note)
-                    .map(|pos| (pos, vel))
-            })
-            .for_each(|(i, vel)| {
-                let v = N / 2;
-                let (i, j) = (i / v, i % v);
-                let j1 = 2 * j;
-                let j2 = j1 + 1;
-
-                let mask = &mut self.mask_cache[i];
-                mask.set(j1, true);
-                mask.set(j2, true);
-
-                let vels = &mut self.vel_cache[i];
-                vels[j1] = vel;
-                vels[j2] = vel;
-            });
-
-        events.extend(
-            self.mask_cache
-                .iter_mut()
-                .zip(self.vel_cache.iter_mut())
-                .enumerate()
-                .filter(|(_, (mask, _))| mask.any())
-                .map(|(i, (mask, vels))| VoiceEvent::Deactivate {
-                    velocity: mem::replace(vels, Float::splat(0.0)),
-                    cluster_idx: i,
-                    mask: mem::replace(mask, TMask::splat(false)),
-                }),
-        );
-
-        // then those scheduled to be completely freed
-        for note in self.free_pending.drain(..) {
+        for (note, vel) in self.deactivate_pending.drain(..) {
             if let Some(i) = self.voices.iter().position(|&note_id| note_id == note) {
-                self.voices[i] = 128;
-
-                while self.voices.last().filter(|&&i| i > 127).is_some() {
-                    self.voices.pop();
-                }
-
-                let v = N / 2;
-                let (i, j) = (i / v, i % v);
-
-                let j1 = 2 * j;
-                let j2 = j1 + 1;
-
-                let mask = &mut self.mask_cache[i];
-                mask.set(j1, true);
-                mask.set(j2, true);
+                self.event_cache.activate_index(i, vel, None);
             }
         }
 
         events.extend(
-            self.mask_cache
-                .iter_mut()
-                .enumerate()
-                .filter(|(_, mask)| mask.any())
-                .map(|(i, mask)| VoiceEvent::Free {
-                    cluster_idx: i,
-                    mask: mem::replace(mask, TMask::splat(false)),
+            self.event_cache
+                .take_data()
+                .map(|(cluster_idx, mask, velocity, _)| VoiceEvent::Deactivate {
+                    velocity,
+                    cluster_idx,
+                    mask,
                 }),
         );
 
-        // fill the gaps with voices scheduled to be activated
-        for (note, vel) in self.add_pending.drain(..) {
+        // then those scheduled to be freed
+        for freed_note in self.free_pending.drain(..) {
             if let Some(i) = self
                 .voices
                 .iter()
-                .position(|&note_id| note_id > 127)
-                .or_else(|| {
-                    let len = self.voices.len();
-                    push_within_capacity_stable(&mut self.voices, 128).then_some(len)
-                })
+                .position(|&note_id| note_id == freed_note)
             {
-                self.voices[i] = note;
+                // fill the gap with a voice scheduled to be activated
+                if let Some((added_note, vel)) = self.add_pending.pop() {
+                    self.voices[i] = added_note;
 
-                let v = N / 2;
-                let (i, j) = (i / v, i % v);
-                let j1 = 2 * j;
-                let j2 = j1 + 1;
+                    self.event_cache.activate_index(i, vel, Some(added_note));
 
-                let mask = &mut self.mask_cache[i];
-                mask.set(j1, true);
-                mask.set(j2, true);
+                // if there are no voices scheduled to be activated
+                // move a voice from the top of the stack to the empty gap
+                } else if let Some(replacement_note) = self.voices.pop() {
+                    if let Some(note) = self.voices.get_mut(i) {
+                        *note = replacement_note;
+                        let from = self.voices.len();
 
-                let vels = &mut self.vel_cache[i];
-                vels[j1] = vel;
-                vels[j2] = vel;
+                        let v = N / 2;
 
-                let notes = &mut self.note_cache[i];
-                notes[j1] = note.into();
-                notes[j2] = note.into();
+                        events.push(VoiceEvent::Move {
+                            from: (from / v, from % v),
+                            to: (i / v, i % v),
+                        });
+                    }
+                }
+            }
+        }
+
+        for (added_note, vel) in self.add_pending.drain(..) {
+            let i = self.voices.len();
+            if push_within_capacity_stable(&mut self.voices, added_note) {
+                self.event_cache.activate_index(i, vel, Some(added_note));
             }
         }
 
         events.extend(
-            self.note_cache
-                .iter_mut()
-                .zip(self.vel_cache.iter_mut())
-                .zip(self.mask_cache.iter_mut())
-                .enumerate()
-                .filter(|(_, (_, mask))| mask.any())
-                .map(|(i, ((note, vel), mask))| VoiceEvent::Activate {
-                    note: mem::replace(note, UInt::splat(0)),
-                    velocity: mem::replace(vel, Float::splat(0.0)),
-                    cluster_idx: i,
-                    mask: mem::replace(mask, TMask::splat(false)),
+            self.event_cache
+                .take_data()
+                .map(|(cluster_idx, mask, velocity, note)| VoiceEvent::Activate {
+                    note,
+                    velocity,
+                    cluster_idx,
+                    mask,
                 }),
         );
-
-        // consolidate voice allocation by moving last voices into the remaining gaps
-        let mut i = 0;
-        while i < self.voices.len() {
-            if self.voices[i] > 127 {
-                let len = self.voices.len() - 1;
-                self.voices.swap(len, i);
-                while self.voices.last().filter(|&&i| i > 127).is_some() {
-                    self.voices.pop();
-                }
-
-                let v = N / 2;
-
-                events.push(VoiceEvent::Move {
-                    from: (len / v, len % v),
-                    to: (i / v, i % v),
-                });
-            }
-            i += 1;
-        }
     }
 
     fn set_max_polyphony(&mut self, max_num_clusters: usize) {
         let stereo_voices_per_vector = N / 2;
         let total_num_voices = max_num_clusters * stereo_voices_per_vector;
 
-        self.voices = Vec::with_capacity(total_num_voices);
-        self.deactivate_pending = Vec::with_capacity(total_num_voices);
-        self.free_pending = Vec::with_capacity(total_num_voices);
-        self.add_pending = Vec::with_capacity(total_num_voices);
+        let cache_cap = total_num_voices * 4;
 
-        self.mask_cache = unsafe { Box::new_uninit_slice(max_num_clusters).assume_init() };
-        self.mask_cache.fill(TMask::splat(false));
+        self.voices = Vec::with_capacity(cache_cap);
+        self.free_pending = Vec::with_capacity(cache_cap);
+        self.deactivate_pending = Vec::with_capacity(cache_cap);
+        self.add_pending = Vec::with_capacity(cache_cap);
 
-        self.vel_cache = unsafe { Box::new_uninit_slice(max_num_clusters).assume_init() };
-        self.vel_cache.fill(Float::splat(0.0));
-
-        self.note_cache = unsafe { Box::new_uninit_slice(max_num_clusters).assume_init() };
-        self.note_cache.fill(UInt::splat(128));
+        self.event_cache.clear_and_set_capacity(max_num_clusters);
     }
 
     fn get_voice_mask(&self, cluster_idx: usize) -> TMask<N> {

@@ -70,7 +70,7 @@ impl<T: SimdElement> ReadOnly<Simd<T, FLOATS_PER_VECTOR>> {
 
 impl<T: SimdElement> ReadOnly<[Simd<T, FLOATS_PER_VECTOR>]> {
     #[inline]
-    pub fn split_stereo_slice(&self) -> &[[ReadOnly<Simd<T, 2>> ; STEREO_VOICES_PER_VECTOR]] {
+    pub fn split_stereo_slice(&self) -> &[[ReadOnly<Simd<T, 2>>; STEREO_VOICES_PER_VECTOR]] {
         unsafe { mem::transmute(self) }
     }
 }

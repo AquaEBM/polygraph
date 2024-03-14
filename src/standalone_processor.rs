@@ -60,10 +60,6 @@ where
         self.vm.note_off(note, vel)
     }
 
-    pub fn note_free(&mut self, note: u8) {
-        self.vm.note_free(note)
-    }
-
     fn buffer_handle<'a>(
         bufs: &'a [OwnedBuffer<T::Sample>],
         input_indices: &'a [Option<BufferIndex>],
@@ -108,8 +104,6 @@ where
                 }
 
                 VoiceEvent::Move { from, to } => self.processor.move_state(from, to),
-
-                _ => (),
             };
 
             let mut voice_mask = self.vm.get_voice_mask(0);
@@ -159,12 +153,16 @@ where
     }
 
     pub fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) {
+        self.processor
+            .initialize(sr, max_buffer_size, max_num_clusters);
 
-        self.processor.initialize(sr, max_buffer_size, max_num_clusters);
-        
         self.vm.set_max_polyphony(max_num_clusters);
-        
-        for buf in self.main_bufs.iter_mut().chain(self.scratch_bufs.iter_mut()) {
+
+        for buf in self
+            .main_bufs
+            .iter_mut()
+            .chain(self.scratch_bufs.iter_mut())
+        {
             *buf = new_vfloat_buffer(max_buffer_size);
         }
 
