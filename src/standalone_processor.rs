@@ -1,11 +1,11 @@
 extern crate alloc;
 
-use core::{cell::Cell, iter, mem, num::NonZeroUsize, ops::AddAssign};
+use core::{cell::Cell, iter, num::NonZeroUsize, ops::AddAssign};
 
 use super::{
     buffer::{BufferHandle, BufferIndex, BufferIndices, Buffers, OutputBufferIndex, OwnedBuffer},
     processor::{new_vfloat_buffer, Processor},
-    simd_util::{simd::num::SimdFloat, MaskAny},
+    simd_util::{simd::num::SimdFloat, MaskAny, MaskSelect},
     voice::{VoiceEvent, VoiceManager},
 };
 
@@ -14,7 +14,6 @@ pub struct StandaloneProcessor<T: Processor, V> {
     max_num_clusters: usize,
     main_bufs: Box<[OwnedBuffer<T::Sample>]>,
     scratch_bufs: Box<[OwnedBuffer<T::Sample>]>,
-    bufs_processed: bool,
     processor: T,
     vm: V,
     events_buffer: Vec<VoiceEvent<T::Sample>>,
@@ -41,7 +40,6 @@ impl<T: Processor + Default, V: Default> Default for StandaloneProcessor<T, V> {
             max_num_clusters: 0,
             main_bufs,
             scratch_bufs,
-            bufs_processed: false,
             processor: Default::default(),
             vm: V::default(),
             events_buffer: Default::default(),
@@ -82,8 +80,8 @@ where
 
     pub fn process(&mut self, current_sample: usize, num_samples: NonZeroUsize)
     where
-        <T::Sample as SimdFloat>::Mask: Clone + MaskAny,
-        T::Sample: AddAssign,
+        <T::Sample as SimdFloat>::Mask: Copy + MaskAny,
+        T::Sample: AddAssign + Default + MaskSelect,
     {
         self.vm.flush_events(&mut self.events_buffer);
 
@@ -118,23 +116,38 @@ where
             mask.any().then_some((cluster_idx, mask))
         });
 
+        let buffer_handle = Self::buffer_handle(
+            &self.main_bufs,
+            &[],
+            &self.output_buf_indices,
+            current_sample,
+            num_samples,
+        );
+
+        let range = current_sample..current_sample + num_samples.get();
+        let zero = T::Sample::default();
+
         let Some((first_cluster_idx, first_mask)) = cluster_idxs.next() else {
+
+            for buf in self.main_bufs.iter_mut() {
+                for sample in &mut Cell::get_mut(buf.as_mut())[range.clone()] {
+                    *sample = zero;
+                }
+            }
             return;
         };
 
-        self.bufs_processed = true;
-
         self.processor.process(
-            Self::buffer_handle(
-                &self.main_bufs,
-                &[],
-                &self.output_buf_indices,
-                current_sample,
-                num_samples,
-            ),
+            buffer_handle,
             first_cluster_idx,
             first_mask,
         );
+
+        for buf in self.main_bufs.iter_mut() {
+            for sample in &mut Cell::get_mut(buf.as_mut())[range.clone()] {
+                *sample = sample.select_or(first_mask, zero);
+            }
+        }
 
         for (cluster_idx, mask) in cluster_idxs {
             self.processor.process(
@@ -156,7 +169,7 @@ where
                     .iter_mut()
                     .zip(Cell::get_mut(scratch_buf.as_mut()))
                 {
-                    *main_sample += *scratch_sample;
+                    *main_sample += scratch_sample.select_or(mask, zero);
                 }
             }
         }
@@ -183,7 +196,7 @@ where
         self.max_num_clusters = max_num_clusters;
     }
 
-    pub fn get_buffers(&mut self) -> Option<&mut [OwnedBuffer<T::Sample>]> {
-        mem::take(&mut self.bufs_processed).then_some(&mut self.main_bufs)
+    pub fn get_buffers(&mut self) -> &mut [OwnedBuffer<T::Sample>] {
+        self.main_bufs.as_mut()
     }
 }
