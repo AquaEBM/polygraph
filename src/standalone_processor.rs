@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use core::{cell::Cell, iter, num::NonZeroUsize, ops::AddAssign};
+use core::{iter, num::NonZeroUsize, ops::AddAssign};
 
 use super::{
     buffer::{BufferHandle, BufferIndex, BufferIndices, Buffers, OutputBufferIndex, OwnedBuffer},
@@ -116,21 +116,12 @@ where
             mask.any().then_some((cluster_idx, mask))
         });
 
-        let buffer_handle = Self::buffer_handle(
-            &self.main_bufs,
-            &[],
-            &self.output_buf_indices,
-            current_sample,
-            num_samples,
-        );
-
         let range = current_sample..current_sample + num_samples.get();
         let zero = T::Sample::default();
 
         let Some((first_cluster_idx, first_mask)) = cluster_idxs.next() else {
-
             for buf in self.main_bufs.iter_mut() {
-                for sample in &mut Cell::get_mut(buf.as_mut())[range.clone()] {
+                for sample in &mut buf.get_mut()[range.clone()] {
                     *sample = zero;
                 }
             }
@@ -138,13 +129,19 @@ where
         };
 
         self.processor.process(
-            buffer_handle,
+            Self::buffer_handle(
+                &self.main_bufs,
+                &[],
+                &self.output_buf_indices,
+                current_sample,
+                num_samples,
+            ),
             first_cluster_idx,
             first_mask,
         );
 
         for buf in self.main_bufs.iter_mut() {
-            for sample in &mut Cell::get_mut(buf.as_mut())[range.clone()] {
+            for sample in &mut buf.as_mut().get_mut()[range.clone()] {
                 *sample = sample.select_or(first_mask, zero);
             }
         }
@@ -165,9 +162,9 @@ where
             for (main_buf, scratch_buf) in
                 self.main_bufs.iter_mut().zip(self.scratch_bufs.iter_mut())
             {
-                for (main_sample, scratch_sample) in Cell::get_mut(main_buf.as_mut())
+                for (main_sample, scratch_sample) in main_buf.get_mut()[range.clone()]
                     .iter_mut()
-                    .zip(Cell::get_mut(scratch_buf.as_mut()))
+                    .zip(scratch_buf.get_mut()[range.clone()].iter_mut())
                 {
                     *main_sample += scratch_sample.select_or(mask, zero);
                 }
