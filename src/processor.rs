@@ -2,7 +2,7 @@ use simd_util::simd::num::SimdFloat;
 
 use super::{
     audio_graph::{AudioGraph, ProcessTask},
-    buffer::{new_owned_buffer, BufferHandle, BufferIndices, Buffers, OwnedBuffer},
+    buffer::{new_zeroed_owned_buffer, BufferHandle, BufferNode, Buffers, OwnedBuffer},
 };
 
 use core::{any::Any, iter, mem, ops::Add};
@@ -84,8 +84,9 @@ pub trait Processor {
 }
 
 pub fn new_vfloat_buffer<T: SimdFloat>(len: usize) -> OwnedBuffer<T> {
-    // SAFETY: `f32`s and thus `Simd<f32, N>`s are safely zeroable
-    unsafe { new_owned_buffer(len) }
+    // SAFETY: `f32`s and 'f64's (and thus `Simd<f32, N>`s and `Simd<f64, N>`s,
+    // the only implementors of `SimdFloat`) are safely zeroable
+    unsafe { new_zeroed_owned_buffer(len) }
 }
 
 pub struct AudioGraphProcessor<T: Processor> {
@@ -162,8 +163,9 @@ impl<T: Processor> AudioGraphProcessor<T> {
     }
 }
 
-impl<T: Processor> Processor for AudioGraphProcessor<T>
+impl<T> Processor for AudioGraphProcessor<T>
 where
+    T: Processor,
     T::Sample: Add<Output = T::Sample>,
     <T::Sample as SimdFloat>::Mask: Clone,
     <T::Sample as SimdFloat>::Bits: Clone,
@@ -176,38 +178,44 @@ where
 
     fn process(
         &mut self,
-        buffers: Buffers<Self::Sample>,
+        mut buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
         voice_mask: <Self::Sample as SimdFloat>::Mask,
     ) {
-        let len = buffers.buffer_size().get();
-        let start = buffers.start();
+        let buf_len = buffers.buffer_size();
+        let buf_start = buffers.start();
+        let len = buf_len.get();
 
         for task in &self.schedule {
-            let handle = BufferHandle::parented(self.buffers.as_mut(), buffers.indices());
+            let node = BufferNode::append(buffers.handle(), self.buffers.as_mut());
 
             match task {
-                ProcessTask::Add {
+                ProcessTask::Sum {
                     left_input,
                     right_input,
                     output,
                 } => {
-                    let l = handle.get_input_buffer(*left_input, start, len).unwrap();
-                    let r = handle.get_input_buffer(*right_input, start, len).unwrap();
-                    let output = handle.get_output_buffer(*output, start, len).unwrap();
+                    let l = node.get_input_shared(*left_input).unwrap();
+                    let r = node.get_input_shared(*right_input).unwrap();
+                    let output = node.get_output_shared(*output).unwrap();
 
-                    for ((l, r), output) in l.iter().zip(r).zip(output) {
+                    for ((l, r), output) in l[buf_start..][..len]
+                        .iter()
+                        .zip(r[buf_start..][..len].iter())
+                        .zip(output[buf_start..][..len].iter())
+                    {
                         output.set(l.get() + r.get())
                     }
                 }
 
                 ProcessTask::Copy { input, outputs } => {
-                    let input = handle.get_input_buffer(*input, start, len).unwrap();
+                    let input = node.get_input_shared(*input).unwrap();
 
                     outputs.iter().for_each(|&index| {
-                        for (i, o) in input
+                        let output = node.get_output_shared(index).unwrap();
+                        for (i, o) in input[buf_start..][..len]
                             .iter()
-                            .zip(handle.get_output_buffer(index, start, len).unwrap())
+                            .zip(output[buf_start..][..len].iter())
                         {
                             o.set(i.get())
                         }
@@ -219,15 +227,16 @@ where
                     inputs,
                     outputs,
                 } => {
-                    let indices = BufferIndices::new(handle, inputs, outputs);
+                    let handle = BufferHandle::new(node, inputs, outputs);
 
-                    let bufs = Buffers::new(buffers.start(), buffers.buffer_size(), indices);
+                    let bufs = Buffers::new(buf_start, buf_len, handle);
                     self.processors[*index].as_mut().unwrap().process(
                         bufs,
                         cluster_idx,
                         voice_mask.clone(),
                     );
                 }
+                ProcessTask::Delay {} => todo!(),
             }
         }
     }

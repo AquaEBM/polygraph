@@ -77,7 +77,7 @@ impl Scheduler {
                     .iter_ports()
                     .filter_map(|port| buffer_allocator.insert_claim(buffer, port))
                     .for_each(|(prev_claim, new_output)| {
-                        final_schedule.push(ProcessTask::Add {
+                        final_schedule.push(ProcessTask::Sum {
                             left_input: buffer,
                             right_input: prev_claim,
                             output: new_output,

@@ -212,7 +212,7 @@ fn basic_adder() {
                     inputs: Box::new([]),
                     outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
                 },
-                ProcessTask::Add {
+                ProcessTask::Sum {
                     left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
                     right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
                     output: OutputBufferIndex::Global(0),
@@ -265,7 +265,7 @@ fn multiple_adds() {
                     inputs: Box::new([]),
                     outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
                 },
-                ProcessTask::Add {
+                ProcessTask::Sum {
                     left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
                     right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
                     output: OutputBufferIndex::Global(0),
@@ -275,7 +275,7 @@ fn multiple_adds() {
                     inputs: Box::new([]),
                     outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
                 },
-                ProcessTask::Add {
+                ProcessTask::Sum {
                     left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
                     right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
                     output: OutputBufferIndex::Global(0),
@@ -448,7 +448,7 @@ fn m_structure() {
                     inputs: Box::new([]),
                     outputs: Box::new([Some(OutputBufferIndex::Global(2))]),
                 },
-                ProcessTask::Add {
+                ProcessTask::Sum {
                     left_input: BufferIndex::Output(OutputBufferIndex::Global(2)),
                     right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
                     output: OutputBufferIndex::Global(1),

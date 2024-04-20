@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 
-pub struct SharedLender<T: ?Sized, const BUFFER_SIZE: usize = 128> {
+pub struct SharedLender<T: ?Sized> {
     ring_buffers: Vec<rtrb::Producer<Arc<T>>>,
     drop_queue: Vec<Arc<T>>,
 }
@@ -16,7 +16,7 @@ impl<T: ?Sized> Default for SharedLender<T> {
     }
 }
 
-impl<T: ?Sized, const BUFFER_SIZE: usize> SharedLender<T, BUFFER_SIZE> {
+impl<T: ?Sized> SharedLender<T> {
     pub fn send(&mut self, item: Arc<T>) {
         for producer in &mut self.ring_buffers {
             producer.push(item.clone()).unwrap();
@@ -32,7 +32,7 @@ impl<T: ?Sized, const BUFFER_SIZE: usize> SharedLender<T, BUFFER_SIZE> {
     }
 
     pub fn create_new_reciever(&mut self) -> LenderReciever<T> {
-        let (producer, reciever) = rtrb::RingBuffer::new(BUFFER_SIZE);
+        let (producer, reciever) = rtrb::RingBuffer::new(256);
         self.ring_buffers.push(producer);
 
         LenderReciever {

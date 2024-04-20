@@ -3,7 +3,7 @@ extern crate alloc;
 use core::{iter, num::NonZeroUsize, ops::AddAssign};
 
 use super::{
-    buffer::{BufferHandle, BufferIndex, BufferIndices, Buffers, OutputBufferIndex, OwnedBuffer},
+    buffer::{BufferHandle, BufferIndex, BufferNode, Buffers, OutputBufferIndex, OwnedBuffer},
     processor::{new_vfloat_buffer, Processor},
     simd_util::{simd::num::SimdFloat, MaskAny, MaskSelect},
     voice::{VoiceEvent, VoiceManager},
@@ -42,7 +42,7 @@ impl<T: Processor + Default, V: Default> Default for StandaloneProcessor<T, V> {
             scratch_bufs,
             processor: Default::default(),
             vm: V::default(),
-            events_buffer: Default::default(),
+            events_buffer: Vec::with_capacity(1024),
         }
     }
 }
@@ -65,22 +65,22 @@ where
     }
 
     fn buffer_handle<'a>(
-        bufs: &'a [OwnedBuffer<T::Sample>],
+        bufs: &'a mut [OwnedBuffer<T::Sample>],
         input_indices: &'a [Option<BufferIndex>],
         output_indices: &'a [Option<OutputBufferIndex>],
         start: usize,
         num_samples: NonZeroUsize,
     ) -> Buffers<'a, T::Sample> {
-        let handle = BufferHandle::toplevel(bufs);
+        let handle = BufferNode::toplevel(bufs);
 
-        let indices = BufferIndices::new(handle, input_indices, output_indices);
+        let indices = BufferHandle::new(handle, input_indices, output_indices);
 
         Buffers::new(start, num_samples, indices)
     }
 
     pub fn process(&mut self, current_sample: usize, num_samples: NonZeroUsize)
     where
-        <T::Sample as SimdFloat>::Mask: Copy + MaskAny,
+        <T::Sample as SimdFloat>::Mask: Clone + MaskAny,
         T::Sample: AddAssign + Default + MaskSelect,
     {
         self.vm.flush_events(&mut self.events_buffer);
@@ -130,33 +130,33 @@ where
 
         self.processor.process(
             Self::buffer_handle(
-                &self.main_bufs,
+                &mut self.main_bufs,
                 &[],
                 &self.output_buf_indices,
                 current_sample,
                 num_samples,
             ),
             first_cluster_idx,
-            first_mask,
+            first_mask.clone(),
         );
 
         for buf in self.main_bufs.iter_mut() {
             for sample in &mut buf.as_mut().get_mut()[range.clone()] {
-                *sample = sample.select_or(first_mask, zero);
+                *sample = sample.select_or(first_mask.clone(), zero);
             }
         }
 
         for (cluster_idx, mask) in cluster_idxs {
             self.processor.process(
                 Self::buffer_handle(
-                    &self.scratch_bufs,
+                    &mut self.scratch_bufs,
                     &[],
                     &self.output_buf_indices,
                     current_sample,
                     num_samples,
                 ),
                 cluster_idx,
-                mask,
+                mask.clone(),
             );
 
             for (main_buf, scratch_buf) in
@@ -166,7 +166,7 @@ where
                     .iter_mut()
                     .zip(scratch_buf.get_mut()[range.clone()].iter_mut())
                 {
-                    *main_sample += scratch_sample.select_or(mask, zero);
+                    *main_sample += scratch_sample.select_or(mask.clone(), zero);
                 }
             }
         }
@@ -184,10 +184,6 @@ where
             .chain(self.scratch_bufs.iter_mut())
         {
             *buf = new_vfloat_buffer(max_buffer_size);
-        }
-
-        if self.events_buffer.capacity() < 512 {
-            self.events_buffer = Vec::with_capacity(512);
         }
 
         self.max_num_clusters = max_num_clusters;

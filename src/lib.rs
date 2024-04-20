@@ -13,3 +13,5 @@ pub use simd_util;
 pub mod voice;
 
 pub mod standalone_processor;
+
+pub mod delay_buffer;

@@ -49,7 +49,7 @@ impl Port {
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum ProcessTask {
-    Add {
+    Sum {
         left_input: BufferIndex,
         right_input: BufferIndex,
         output: OutputBufferIndex,
@@ -63,6 +63,7 @@ pub enum ProcessTask {
         inputs: Box<[Option<BufferIndex>]>,
         outputs: Box<[Option<OutputBufferIndex>]>,
     },
+    Delay {},
 }
 
 impl ProcessTask {
@@ -102,7 +103,7 @@ impl ProcessTask {
         }
 
         match self {
-            ProcessTask::Add {
+            ProcessTask::Sum {
                 left_input,
                 right_input,
                 output,
@@ -131,6 +132,7 @@ impl ProcessTask {
                 Self::filter_outputs_bufs(iter::once(input), output.iter_mut()),
                 buffer_replacements,
             ),
+            ProcessTask::Delay {} => todo!(),
         }
     }
 }
