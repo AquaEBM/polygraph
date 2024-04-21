@@ -1,4 +1,4 @@
-use core::{iter, mem};
+use core::{iter, mem, num::NonZeroUsize};
 
 #[derive(Clone, Debug, Default)]
 pub struct FixedDelayBuffer<T> {
@@ -7,12 +7,14 @@ pub struct FixedDelayBuffer<T> {
 }
 
 impl<T> FixedDelayBuffer<T> {
-    pub fn new(num_samples: usize) -> Self
+    pub fn new(num_samples: NonZeroUsize) -> Self
     where
         T: Default,
     {
         Self {
-            buf: iter::repeat_with(T::default).take(num_samples).collect(),
+            buf: iter::repeat_with(T::default)
+                .take(num_samples.get())
+                .collect(),
             ..Default::default()
         }
     }
