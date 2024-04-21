@@ -155,7 +155,7 @@ impl<'a, T> BufferNode<'a, T> {
     pub fn get_output_shared(&self, buf_index: OutputBufferIndex) -> Option<&[Cell<T>]> {
         match buf_index {
             OutputBufferIndex::Global(i) => self.parent.as_ref().unwrap().get_output_shared(i),
-            OutputBufferIndex::Intermediate(i) => Some(&self.buffers[i].as_slice_of_cells()),
+            OutputBufferIndex::Intermediate(i) => Some(self.buffers[i].as_slice_of_cells()),
         }
     }
 }
