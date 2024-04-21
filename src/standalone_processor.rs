@@ -3,7 +3,7 @@ extern crate alloc;
 use core::{iter, num::NonZeroUsize, ops::AddAssign};
 
 use super::{
-    buffer::{BufferHandle, BufferIndex, BufferNode, Buffers, OutputBufferIndex, OwnedBuffer},
+    buffer::{BufferIndex, BufferNode, Buffers, OutputBufferIndex, OwnedBuffer},
     processor::{new_vfloat_buffer, Processor},
     simd_util::{simd::num::SimdFloat, MaskAny, MaskSelect},
     voice::{VoiceEvent, VoiceManager},
@@ -71,11 +71,11 @@ where
         start: usize,
         num_samples: NonZeroUsize,
     ) -> Buffers<'a, T::Sample> {
-        let handle = BufferNode::toplevel(bufs);
+        let node = BufferNode::toplevel(bufs);
 
-        let indices = BufferHandle::new(handle, input_indices, output_indices);
+        let handle = node.with_indices(input_indices, output_indices);
 
-        Buffers::new(start, num_samples, indices)
+        handle.with_buffer_pos(start, num_samples)
     }
 
     pub fn process(&mut self, current_sample: usize, num_samples: NonZeroUsize)

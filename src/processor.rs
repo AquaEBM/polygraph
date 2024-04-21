@@ -2,7 +2,7 @@ use simd_util::simd::num::SimdFloat;
 
 use super::{
     audio_graph::{AudioGraph, ProcessTask},
-    buffer::{new_zeroed_owned_buffer, BufferHandle, BufferNode, Buffers, OwnedBuffer},
+    buffer::{new_zeroed_owned_buffer, Buffers, OwnedBuffer},
 };
 
 use core::{any::Any, iter, mem, ops::Add};
@@ -182,12 +182,12 @@ where
         cluster_idx: usize,
         voice_mask: <Self::Sample as SimdFloat>::Mask,
     ) {
-        let buf_len = buffers.buffer_size();
-        let buf_start = buffers.start();
-        let len = buf_len.get();
+        let size = buffers.buffer_size();
+        let start = buffers.start();
+        let len = size.get();
 
         for task in &self.schedule {
-            let node = BufferNode::append(buffers.handle(), self.buffers.as_mut());
+            let node = buffers.handle().append(self.buffers.as_mut());
 
             match task {
                 ProcessTask::Sum {
@@ -199,24 +199,21 @@ where
                     let r = node.get_input_shared(*right_input).unwrap();
                     let output = node.get_output_shared(*output).unwrap();
 
-                    for ((l, r), output) in l[buf_start..][..len]
+                    for ((l, r), output) in l[start..][..len]
                         .iter()
-                        .zip(r[buf_start..][..len].iter())
-                        .zip(output[buf_start..][..len].iter())
+                        .zip(r[start..][..len].iter())
+                        .zip(output[start..][..len].iter())
                     {
                         output.set(l.get() + r.get())
                     }
                 }
 
                 ProcessTask::Copy { input, outputs } => {
-                    let input = node.get_input_shared(*input).unwrap();
+                    let input = &node.get_input_shared(*input).unwrap()[start..][..len];
 
                     outputs.iter().for_each(|&index| {
                         let output = node.get_output_shared(index).unwrap();
-                        for (i, o) in input[buf_start..][..len]
-                            .iter()
-                            .zip(output[buf_start..][..len].iter())
-                        {
+                        for (o, i) in output[start..][..len].iter().zip(input) {
                             o.set(i.get())
                         }
                     })
@@ -227,9 +224,9 @@ where
                     inputs,
                     outputs,
                 } => {
-                    let handle = BufferHandle::new(node, inputs, outputs);
-
-                    let bufs = Buffers::new(buf_start, buf_len, handle);
+                    let bufs = node
+                        .with_indices(inputs, outputs)
+                        .with_buffer_pos(start, size);
                     self.processors[*index].as_mut().unwrap().process(
                         bufs,
                         cluster_idx,
