@@ -123,8 +123,8 @@ fn test_basic() {
         schedule
             == &[ProcessTask::Process {
                 index: 0,
-                inputs: Box::from([Some(BufferIndex::GlobalInput(0))]),
-                outputs: Box::new([Some(OutputBufferIndex::Global(0))])
+                inputs: Box::from([Some(BufferIndex::MasterInput(0))]),
+                outputs: Box::new([Some(OutputBufferIndex::Master(0))])
             }]
             && num_buffers == 0
     );
@@ -164,13 +164,13 @@ fn basic_chain() {
             == &[
                 ProcessTask::Process {
                     index: second_node_index,
-                    inputs: Box::new([Some(BufferIndex::GlobalInput(0))]),
-                    outputs: Box::new([Some(OutputBufferIndex::Global(0))])
+                    inputs: Box::new([Some(BufferIndex::MasterInput(0))]),
+                    outputs: Box::new([Some(OutputBufferIndex::Master(0))])
                 },
                 ProcessTask::Process {
                     index: first_node_index,
-                    inputs: Box::new([Some(BufferIndex::Output(OutputBufferIndex::Global(0)))]),
-                    outputs: Box::new([Some(OutputBufferIndex::Global(0))])
+                    inputs: Box::new([Some(BufferIndex::Output(OutputBufferIndex::Master(0)))]),
+                    outputs: Box::new([Some(OutputBufferIndex::Master(0))])
                 },
             ]
             && num_buffers == 0
@@ -205,17 +205,17 @@ fn basic_adder() {
                 ProcessTask::Process {
                     index: node1,
                     inputs: Box::new([]),
-                    outputs: Box::new([Some(OutputBufferIndex::Global(0))]),
+                    outputs: Box::new([Some(OutputBufferIndex::Master(0))]),
                 },
                 ProcessTask::Process {
                     index: node2,
                     inputs: Box::new([]),
-                    outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
+                    outputs: Box::new([Some(OutputBufferIndex::Local(0))]),
                 },
                 ProcessTask::Sum {
-                    left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
-                    right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
-                    output: OutputBufferIndex::Global(0),
+                    left_input: BufferIndex::Output(OutputBufferIndex::Local(0)),
+                    right_input: BufferIndex::Output(OutputBufferIndex::Master(0)),
+                    output: OutputBufferIndex::Master(0),
                 }
             ]
             && num_buffers == 1
@@ -258,27 +258,27 @@ fn multiple_adds() {
                 ProcessTask::Process {
                     index: node1,
                     inputs: Box::new([]),
-                    outputs: Box::new([Some(OutputBufferIndex::Global(0))]),
+                    outputs: Box::new([Some(OutputBufferIndex::Master(0))]),
                 },
                 ProcessTask::Process {
                     index: node2,
                     inputs: Box::new([]),
-                    outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
+                    outputs: Box::new([Some(OutputBufferIndex::Local(0))]),
                 },
                 ProcessTask::Sum {
-                    left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
-                    right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
-                    output: OutputBufferIndex::Global(0),
+                    left_input: BufferIndex::Output(OutputBufferIndex::Local(0)),
+                    right_input: BufferIndex::Output(OutputBufferIndex::Master(0)),
+                    output: OutputBufferIndex::Master(0),
                 },
                 ProcessTask::Process {
                     index: node3,
                     inputs: Box::new([]),
-                    outputs: Box::new([Some(OutputBufferIndex::Intermediate(0))]),
+                    outputs: Box::new([Some(OutputBufferIndex::Local(0))]),
                 },
                 ProcessTask::Sum {
-                    left_input: BufferIndex::Output(OutputBufferIndex::Intermediate(0)),
-                    right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
-                    output: OutputBufferIndex::Global(0),
+                    left_input: BufferIndex::Output(OutputBufferIndex::Local(0)),
+                    right_input: BufferIndex::Output(OutputBufferIndex::Master(0)),
+                    output: OutputBufferIndex::Master(0),
                 }
             ]
             && num_buffers == 1
@@ -441,17 +441,17 @@ fn m_structure() {
                 ProcessTask::Process {
                     index: node1,
                     inputs: Box::new([]),
-                    outputs: Box::new([Some(OutputBufferIndex::Global(0))]),
+                    outputs: Box::new([Some(OutputBufferIndex::Master(0))]),
                 },
                 ProcessTask::Process {
                     index: node2,
                     inputs: Box::new([]),
-                    outputs: Box::new([Some(OutputBufferIndex::Global(2))]),
+                    outputs: Box::new([Some(OutputBufferIndex::Master(2))]),
                 },
                 ProcessTask::Sum {
-                    left_input: BufferIndex::Output(OutputBufferIndex::Global(2)),
-                    right_input: BufferIndex::Output(OutputBufferIndex::Global(0)),
-                    output: OutputBufferIndex::Global(1),
+                    left_input: BufferIndex::Output(OutputBufferIndex::Master(2)),
+                    right_input: BufferIndex::Output(OutputBufferIndex::Master(0)),
+                    output: OutputBufferIndex::Master(1),
                 }
             ]
             && num_buffers == 0

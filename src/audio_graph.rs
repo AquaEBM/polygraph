@@ -88,9 +88,9 @@ impl ProcessTask {
             buffer_replacements: &HashMap<usize, usize>,
         ) {
             buffers.for_each(|buf| {
-                if let OutputBufferIndex::Intermediate(idx) = buf {
+                if let OutputBufferIndex::Local(idx) = buf {
                     if let Some(&i) = buffer_replacements.get(idx) {
-                        *buf = OutputBufferIndex::Global(i);
+                        *buf = OutputBufferIndex::Master(i);
                     } else {
                         *idx -= buffer_replacements
                             .keys()

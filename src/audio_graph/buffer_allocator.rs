@@ -50,7 +50,7 @@ impl BufferAllocator {
                 self.free_buffers.remove(&buf);
                 buf
             } else {
-                let new_buf_index = OutputBufferIndex::Intermediate(self.num_intermediate_buffers);
+                let new_buf_index = OutputBufferIndex::Local(self.num_intermediate_buffers);
                 self.num_intermediate_buffers += 1;
 
                 new_buf_index

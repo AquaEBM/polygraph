@@ -1,8 +1,4 @@
-use core::{
-    cell::Cell,
-    mem::{self, transmute},
-    num::NonZeroUsize,
-};
+use core::{cell::Cell, mem, num::NonZeroUsize};
 
 use simd_util::{
     simd::{Simd, SimdElement},
@@ -13,7 +9,13 @@ use simd_util::{
 #[repr(transparent)]
 pub struct ReadOnly<T: ?Sized>(Cell<T>);
 
-// SAFETY (for all the `mem::transmute`s used in the implementations of `ReadOnly<T>`): read the above doc comment
+// SAFETY (for the `mem::transmute`s used in the implementations of `ReadOnly<T>`):
+//  - `ReadOnly<T>` has the same layout as `Cell<T>` (which in turn has the same layout as `T`).
+//  - `ReadOnly<T>`'s semantics and functionality (`ReadOnly::get`) are a subset of those of
+// `Cell<T>`, which, given the fact that one cannot convert from a `ReadOnly<T>` back to a
+// `Cell<T>`, garantees their soundness & the validity of the contained `T` value.
+//
+// - Through ellision rules, lifetimes are preserved and remain bounded.
 
 impl<T: ?Sized> ReadOnly<T> {
     #[inline]
@@ -76,9 +78,12 @@ pub type OwnedBuffer<T> = Box<Cell<[T]>>;
 /// T must be safely zeroable
 #[inline]
 pub(crate) unsafe fn new_zeroed_owned_buffer<T>(len: usize) -> OwnedBuffer<T> {
-    // SAFETY: T is zeroable, and Cell<T> has the same layout as T
-    transmute(Box::<[T]>::new_zeroed_slice(len).assume_init())
+    // SAFETY: T is zeroable, Cell<T> has the same layout as T, thus, by extension, Cell<[T]>
+    // has the same layout as [T]
+    mem::transmute(Box::<[T]>::new_zeroed_slice(len).assume_init())
 }
+
+// TODO: name bikeshedding
 
 // The following structs describe a linked list-like interface in order to allow
 // audio graph nodes (and potentially others nested in them) to (re)use buffers
@@ -87,25 +92,22 @@ pub(crate) unsafe fn new_zeroed_owned_buffer<T>(len: usize) -> OwnedBuffer<T> {
 // the tricks described in this discussion are used:
 // https://users.rust-lang.org/t/safe-interface-for-a-singly-linked-list-of-mutable-references/107401
 
-pub struct BufferNode<'a, T> {
-    // the most notable trick here is the usage of a trait object to represent a nested `BufferNode<'_, T>`,
-    // since trait objects (dyn Trait + 'a) are covariant over their inner lifetime(s) ('a) this pattern
-    // is usable, and very powerful, in spite of &'a mut T being invariant over T.
-    parent: Option<&'a mut dyn BufferHandleInner<T>>,
+pub struct LocalBufferNode<'a, T> {
+    // the most notable trick here is the usage of a trait object to represent a nested
+    // `BufferNode<'_, T>`, since trait objects (dyn Trait + 'a) are covariant over their
+    // inner lifetime(s) ('a) this now compiles, in spite of &'a mut T being invariant over T.
+    parent: Option<&'a mut dyn LocalBufferNodeImpl<T>>,
     buffers: &'a mut [OwnedBuffer<T>],
 }
 
-impl<'a, T> Default for BufferNode<'a, T> {
+impl<'a, T> Default for LocalBufferNode<'a, T> {
     #[inline]
     fn default() -> Self {
-        Self {
-            parent: Default::default(),
-            buffers: Default::default(),
-        }
+        Self::toplevel(&mut [])
     }
 }
 
-impl<'a, T> BufferNode<'a, T> {
+impl<'a, T> LocalBufferNode<'a, T> {
     #[inline]
     pub fn toplevel(buffers: &'a mut [OwnedBuffer<T>]) -> Self {
         Self {
@@ -119,8 +121,8 @@ impl<'a, T> BufferNode<'a, T> {
         self,
         inputs: &'a [Option<BufferIndex>],
         outputs: &'a [Option<OutputBufferIndex>],
-    ) -> BufferHandle<'a, T> {
-        BufferHandle {
+    ) -> BufferNode<'a, T> {
+        BufferNode {
             node: self,
             inputs,
             outputs,
@@ -128,9 +130,18 @@ impl<'a, T> BufferNode<'a, T> {
     }
 
     #[inline]
+    pub fn with_buffer_pos(self, start: usize, len: NonZeroUsize) -> LocalBufferHandle<'a, T> {
+        LocalBufferHandle {
+            start,
+            len,
+            node: self,
+        }
+    }
+
+    #[inline]
     pub fn get_input(&mut self, buf_index: BufferIndex) -> Option<&[T]> {
         match buf_index {
-            BufferIndex::GlobalInput(i) => self.parent.as_mut().unwrap().get_input(i),
+            BufferIndex::MasterInput(i) => self.parent.as_mut().unwrap().get_input(i),
             BufferIndex::Output(buf) => self.get_output(buf).map(|buf| &*buf),
         }
     }
@@ -138,7 +149,7 @@ impl<'a, T> BufferNode<'a, T> {
     #[inline]
     pub fn get_input_shared(&self, buf_index: BufferIndex) -> Option<&[ReadOnly<T>]> {
         match buf_index {
-            BufferIndex::GlobalInput(i) => self.parent.as_ref().unwrap().get_input_shared(i),
+            BufferIndex::MasterInput(i) => self.parent.as_ref().unwrap().get_input_shared(i),
             BufferIndex::Output(buf) => self.get_output_shared(buf).map(ReadOnly::from_slice),
         }
     }
@@ -146,33 +157,33 @@ impl<'a, T> BufferNode<'a, T> {
     #[inline]
     pub fn get_output(&mut self, buf_index: OutputBufferIndex) -> Option<&mut [T]> {
         match buf_index {
-            OutputBufferIndex::Global(i) => self.parent.as_mut().unwrap().get_output(i),
-            OutputBufferIndex::Intermediate(i) => Some(Cell::get_mut(&mut self.buffers[i])),
+            OutputBufferIndex::Master(i) => self.parent.as_mut().unwrap().get_output(i),
+            OutputBufferIndex::Local(i) => Some(Cell::get_mut(&mut self.buffers[i])),
         }
     }
 
     #[inline]
     pub fn get_output_shared(&self, buf_index: OutputBufferIndex) -> Option<&[Cell<T>]> {
         match buf_index {
-            OutputBufferIndex::Global(i) => self.parent.as_ref().unwrap().get_output_shared(i),
-            OutputBufferIndex::Intermediate(i) => Some(self.buffers[i].as_slice_of_cells()),
+            OutputBufferIndex::Master(i) => self.parent.as_ref().unwrap().get_output_shared(i),
+            OutputBufferIndex::Local(i) => Some(self.buffers[i].as_slice_of_cells()),
         }
     }
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
 pub enum OutputBufferIndex {
-    Global(usize),
-    Intermediate(usize),
+    Master(usize),
+    Local(usize),
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
 pub enum BufferIndex {
-    GlobalInput(usize),
+    MasterInput(usize),
     Output(OutputBufferIndex),
 }
 
-pub trait BufferHandleInner<T> {
+pub trait LocalBufferNodeImpl<T> {
     fn get_input(&mut self, index: usize) -> Option<&[T]>;
 
     fn get_input_shared(&self, index: usize) -> Option<&[ReadOnly<T>]>;
@@ -182,13 +193,13 @@ pub trait BufferHandleInner<T> {
     fn get_output_shared(&self, index: usize) -> Option<&[Cell<T>]>;
 }
 
-pub struct BufferHandle<'a, T> {
-    node: BufferNode<'a, T>,
+pub struct BufferNode<'a, T> {
+    node: LocalBufferNode<'a, T>,
     inputs: &'a [Option<BufferIndex>],
     outputs: &'a [Option<OutputBufferIndex>],
 }
 
-impl<'a, T> Default for BufferHandle<'a, T> {
+impl<'a, T> Default for BufferNode<'a, T> {
     #[inline]
     fn default() -> Self {
         Self {
@@ -199,26 +210,26 @@ impl<'a, T> Default for BufferHandle<'a, T> {
     }
 }
 
-impl<'a, T> BufferHandle<'a, T> {
+impl<'a, T> BufferNode<'a, T> {
     #[inline]
-    pub fn append<'b>(&'b mut self, buffers: &'b mut [OwnedBuffer<T>]) -> BufferNode<'b, T> {
-        BufferNode {
+    pub fn append<'b>(&'b mut self, buffers: &'b mut [OwnedBuffer<T>]) -> LocalBufferNode<'b, T> {
+        LocalBufferNode {
             parent: Some(self),
             buffers,
         }
     }
 
     #[inline]
-    pub fn with_buffer_pos(self, start: usize, len: NonZeroUsize) -> Buffers<'a, T> {
-        Buffers {
-            handle: self,
+    pub fn with_buffer_pos(self, start: usize, len: NonZeroUsize) -> BufferHandle<'a, T> {
+        BufferHandle {
+            node: self,
             start,
             len,
         }
     }
 }
 
-impl<'a, T> BufferHandleInner<T> for BufferHandle<'a, T> {
+impl<'a, T> LocalBufferNodeImpl<T> for BufferNode<'a, T> {
     #[inline]
     fn get_input(&mut self, index: usize) -> Option<&[T]> {
         self.inputs.get(index).and_then(|maybe_index| {
@@ -248,52 +259,100 @@ impl<'a, T> BufferHandleInner<T> for BufferHandle<'a, T> {
     }
 }
 
-pub struct Buffers<'a, T> {
+pub struct LocalBufferHandle<'a, T> {
     start: usize,
     len: NonZeroUsize,
-    handle: BufferHandle<'a, T>,
+    node: LocalBufferNode<'a, T>,
 }
 
-impl<'a, T> Buffers<'a, T> {
+impl<'a, T> LocalBufferHandle<'a, T> {
     #[inline]
-    pub(crate) fn start(&self) -> usize {
-        self.start
+    pub fn with_indices(
+        self,
+        inputs: &'a [Option<BufferIndex>],
+        outputs: &'a [Option<OutputBufferIndex>],
+    ) -> BufferHandle<'a, T> {
+        BufferHandle {
+            start: self.start,
+            len: self.len,
+            node: self.node.with_indices(inputs, outputs),
+        }
     }
 
+    #[inline]
+    pub fn get_input(&mut self, index: BufferIndex) -> Option<&[T]> {
+        self.node
+            .get_input(index)
+            .map(|buf| &buf[self.start..][..self.len.get()])
+    }
+
+    #[inline]
+    pub fn get_input_shared(&self, index: BufferIndex) -> Option<&[ReadOnly<T>]> {
+        self.node
+            .get_input_shared(index)
+            .map(|buf| &buf[self.start..][..self.len.get()])
+    }
+
+    #[inline]
+    pub fn get_output(&mut self, index: OutputBufferIndex) -> Option<&mut [T]> {
+        self.node
+            .get_output(index)
+            .map(|buf| &mut buf[self.start..][..self.len.get()])
+    }
+
+    #[inline]
+    pub fn get_output_shared(&self, index: OutputBufferIndex) -> Option<&[Cell<T>]> {
+        self.node
+            .get_output_shared(index)
+            .map(|buf| &buf[self.start..][..self.len.get()])
+    }
+}
+
+pub struct BufferHandle<'a, T> {
+    start: usize,
+    len: NonZeroUsize,
+    node: BufferNode<'a, T>,
+}
+
+impl<'a, T> BufferHandle<'a, T> {
     #[inline]
     pub fn buffer_size(&self) -> NonZeroUsize {
         self.len
     }
 
     #[inline]
-    pub fn handle(&mut self) -> &mut BufferHandle<'a, T> {
-        &mut self.handle
+    pub fn append<'b>(&'b mut self, buffers: &'b mut [OwnedBuffer<T>]) -> LocalBufferHandle<'b, T> {
+        LocalBufferHandle {
+            node: self.node.append(buffers),
+            start: self.start,
+            len: self.len,
+        }
     }
 
     #[inline]
     pub fn get_input(&mut self, index: usize) -> Option<&[T]> {
-        self.handle
+        self.node
             .get_input(index)
             .map(|buf| &buf[self.start..][..self.len.get()])
     }
 
     #[inline]
     pub fn get_input_shared(&self, index: usize) -> Option<&[ReadOnly<T>]> {
-        self.handle
+        self.node
             .get_input_shared(index)
             .map(|buf| &buf[self.start..][..self.len.get()])
     }
 
     #[inline]
     pub fn get_output(&mut self, index: usize) -> Option<&mut [T]> {
-        self.handle
+        self.node
             .get_output(index)
             .map(|buf| &mut buf[self.start..][..self.len.get()])
     }
 
     #[inline]
     pub fn get_output_shared(&self, index: usize) -> Option<&[Cell<T>]> {
-        self.handle
+        self.node
             .get_output_shared(index)
             .map(|buf| &buf[self.start..][..self.len.get()])
     }

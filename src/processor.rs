@@ -2,7 +2,7 @@ use simd_util::simd::num::SimdFloat;
 
 use super::{
     audio_graph::{AudioGraph, ProcessTask},
-    buffer::{new_zeroed_owned_buffer, Buffers, OwnedBuffer},
+    buffer::{new_zeroed_owned_buffer, BufferHandle, OwnedBuffer},
 };
 
 use core::{any::Any, iter, mem, ops::Add};
@@ -34,7 +34,7 @@ pub trait Processor {
 
     fn process(
         &mut self,
-        buffers: Buffers<Self::Sample>,
+        buffers: BufferHandle<Self::Sample>,
         cluster_idx: usize,
         voice_mask: <Self::Sample as SimdFloat>::Mask,
     ) {
@@ -178,16 +178,12 @@ where
 
     fn process(
         &mut self,
-        mut buffers: Buffers<Self::Sample>,
+        mut buffers: BufferHandle<Self::Sample>,
         cluster_idx: usize,
         voice_mask: <Self::Sample as SimdFloat>::Mask,
     ) {
-        let size = buffers.buffer_size();
-        let start = buffers.start();
-        let len = size.get();
-
         for task in &self.schedule {
-            let node = buffers.handle().append(self.buffers.as_mut());
+            let handle = buffers.append(self.buffers.as_mut());
 
             match task {
                 ProcessTask::Sum {
@@ -195,25 +191,21 @@ where
                     right_input,
                     output,
                 } => {
-                    let l = node.get_input_shared(*left_input).unwrap();
-                    let r = node.get_input_shared(*right_input).unwrap();
-                    let output = node.get_output_shared(*output).unwrap();
+                    let l = handle.get_input_shared(*left_input).unwrap();
+                    let r = handle.get_input_shared(*right_input).unwrap();
+                    let output = handle.get_output_shared(*output).unwrap();
 
-                    for ((l, r), output) in l[start..][..len]
-                        .iter()
-                        .zip(r[start..][..len].iter())
-                        .zip(output[start..][..len].iter())
-                    {
+                    for ((l, r), output) in l.iter().zip(r).zip(output) {
                         output.set(l.get() + r.get())
                     }
                 }
 
                 ProcessTask::Copy { input, outputs } => {
-                    let input = &node.get_input_shared(*input).unwrap()[start..][..len];
+                    let input = handle.get_input_shared(*input).unwrap();
 
                     outputs.iter().for_each(|&index| {
-                        let output = node.get_output_shared(index).unwrap();
-                        for (o, i) in output[start..][..len].iter().zip(input) {
+                        let output = handle.get_output_shared(index).unwrap();
+                        for (o, i) in output.iter().zip(input) {
                             o.set(i.get())
                         }
                     })
@@ -224,9 +216,7 @@ where
                     inputs,
                     outputs,
                 } => {
-                    let bufs = node
-                        .with_indices(inputs, outputs)
-                        .with_buffer_pos(start, size);
+                    let bufs = handle.with_indices(inputs, outputs);
                     self.processors[*index].as_mut().unwrap().process(
                         bufs,
                         cluster_idx,
@@ -288,7 +278,7 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
 
     fn process(
         &mut self,
-        buffers: Buffers<Self::Sample>,
+        buffers: BufferHandle<Self::Sample>,
         cluster_idx: usize,
         voice_mask: <Self::Sample as SimdFloat>::Mask,
     ) {

@@ -64,7 +64,7 @@ impl Scheduler {
                 .ports()
                 .iter()
                 .enumerate()
-                .map(|(i, ports)| (!ports.is_empty()).then_some(BufferIndex::GlobalInput(i)))
+                .map(|(i, ports)| (!ports.is_empty()).then_some(BufferIndex::MasterInput(i)))
                 .collect()
         };
 
@@ -102,19 +102,19 @@ impl Scheduler {
 
             if let Some(buf) = buf_allocator.free_buffer(&port) {
                 match buf {
-                    BufferIndex::GlobalInput(_i) => {
+                    BufferIndex::MasterInput(_i) => {
                         buffer_copies
                             .entry(buf)
                             .or_insert_with(HashSet::default)
-                            .insert(OutputBufferIndex::Global(this_port_idx));
+                            .insert(OutputBufferIndex::Master(this_port_idx));
                     }
 
-                    BufferIndex::Output(OutputBufferIndex::Intermediate(i)) => {
+                    BufferIndex::Output(OutputBufferIndex::Local(i)) => {
                         if let Some(&index) = buffer_replacements.get(&i) {
                             buffer_copies
-                                .entry(BufferIndex::Output(OutputBufferIndex::Global(index)))
+                                .entry(BufferIndex::Output(OutputBufferIndex::Master(index)))
                                 .or_insert_with(HashSet::default)
-                                .insert(OutputBufferIndex::Global(this_port_idx));
+                                .insert(OutputBufferIndex::Master(this_port_idx));
                         } else {
                             buffer_replacements.insert(i, this_port_idx);
                         }

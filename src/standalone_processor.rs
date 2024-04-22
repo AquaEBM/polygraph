@@ -3,7 +3,7 @@ extern crate alloc;
 use core::{iter, num::NonZeroUsize, ops::AddAssign};
 
 use super::{
-    buffer::{BufferIndex, BufferNode, Buffers, OutputBufferIndex, OwnedBuffer},
+    buffer::{BufferHandle, BufferIndex, LocalBufferNode, OutputBufferIndex, OwnedBuffer},
     processor::{new_vfloat_buffer, Processor},
     simd_util::{simd::num::SimdFloat, MaskAny, MaskSelect},
     voice::{VoiceEvent, VoiceManager},
@@ -30,10 +30,7 @@ impl<T: Processor + Default, V: Default> Default for StandaloneProcessor<T, V> {
         let main_bufs = iter::repeat_with(empty_buf).take(o).collect();
         let scratch_bufs = iter::repeat_with(empty_buf).take(o).collect();
 
-        let output_buf_indices = (0..o)
-            .map(OutputBufferIndex::Intermediate)
-            .map(Some)
-            .collect();
+        let output_buf_indices = (0..o).map(OutputBufferIndex::Local).map(Some).collect();
 
         Self {
             output_buf_indices,
@@ -70,8 +67,8 @@ where
         output_indices: &'a [Option<OutputBufferIndex>],
         start: usize,
         num_samples: NonZeroUsize,
-    ) -> Buffers<'a, T::Sample> {
-        let node = BufferNode::toplevel(bufs);
+    ) -> BufferHandle<'a, T::Sample> {
+        let node = LocalBufferNode::toplevel(bufs);
 
         let handle = node.with_indices(input_indices, output_indices);
 
