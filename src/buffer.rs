@@ -94,9 +94,9 @@ pub(crate) unsafe fn new_zeroed_owned_buffer<T>(len: usize) -> OwnedBuffer<T> {
 
 pub struct LocalBufferNode<'a, T> {
     // the most notable trick here is the usage of a trait object to represent a nested
-    // `BufferNode<'_, T>`, since trait objects (dyn Trait + 'a) are covariant over their
-    // inner lifetime(s) ('a) this now compiles, in spite of &'a mut T being invariant over T.
-    parent: Option<&'a mut dyn LocalBufferNodeImpl<T>>,
+    // `BufferNode<'_, T>`. Since trait objects (dyn Trait + 'a) are covariant over their
+    // inner lifetime(s) ('a), this now compiles, in spite of &'a mut T being invariant over T.
+    parent: Option<&'a mut dyn BufferNodeImpl<T>>,
     buffers: &'a mut [OwnedBuffer<T>],
 }
 
@@ -183,7 +183,7 @@ pub enum BufferIndex {
     Output(OutputBufferIndex),
 }
 
-pub trait LocalBufferNodeImpl<T> {
+pub trait BufferNodeImpl<T> {
     fn get_input(&mut self, index: usize) -> Option<&[T]>;
 
     fn get_input_shared(&self, index: usize) -> Option<&[ReadOnly<T>]>;
@@ -229,7 +229,7 @@ impl<'a, T> BufferNode<'a, T> {
     }
 }
 
-impl<'a, T> LocalBufferNodeImpl<T> for BufferNode<'a, T> {
+impl<'a, T> BufferNodeImpl<T> for BufferNode<'a, T> {
     #[inline]
     fn get_input(&mut self, index: usize) -> Option<&[T]> {
         self.inputs.get(index).and_then(|maybe_index| {
