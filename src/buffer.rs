@@ -95,7 +95,8 @@ pub(crate) unsafe fn new_zeroed_owned_buffer<T>(len: usize) -> OwnedBuffer<T> {
 pub struct LocalBufferNode<'a, T> {
     // the most notable trick here is the usage of a trait object to represent a nested
     // `BufferNode<'_, T>`. Since trait objects (dyn Trait + 'a) are covariant over their
-    // inner lifetime(s) ('a), this now compiles, in spite of &'a mut T being invariant over T.
+    // inner lifetime(s) ('a), this now compiles (and is usable in practice),
+    // in spite of &'a mut T being invariant over T.
     parent: Option<&'a mut dyn BufferNodeImpl<T>>,
     buffers: &'a mut [OwnedBuffer<T>],
 }
