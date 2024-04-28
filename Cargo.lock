@@ -46,7 +46,7 @@ dependencies = [
 [[package]]
 name = "simd_util"
 version = "0.1.0"
-source = "git+https://github.com/AquaEBM/simd_util.git#f86a528a83be22fca10a35045a8fb17e7247b47e"
+source = "git+https://github.com/AquaEBM/simd_util.git#b8782a392e575ddc8209a6b781b91755ad1005a7"
 dependencies = [
  "cfg-if",
  "core_simd",

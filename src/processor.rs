@@ -2,7 +2,7 @@ use simd_util::simd::num::SimdFloat;
 
 use super::{
     audio_graph::{AudioGraph, ProcessTask},
-    buffer::{new_zeroed_owned_buffer, BufferHandle, OwnedBuffer},
+    buffer::{new_zeroed_owned_buffer, Buffers, OwnedBuffer},
 };
 
 use core::{any::Any, iter, mem, ops::Add};
@@ -34,7 +34,7 @@ pub trait Processor {
 
     fn process(
         &mut self,
-        buffers: BufferHandle<Self::Sample>,
+        buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
         voice_mask: <Self::Sample as SimdFloat>::Mask,
     ) {
@@ -178,7 +178,7 @@ where
 
     fn process(
         &mut self,
-        mut buffers: BufferHandle<Self::Sample>,
+        mut buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
         voice_mask: <Self::Sample as SimdFloat>::Mask,
     ) {
@@ -278,7 +278,7 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
 
     fn process(
         &mut self,
-        buffers: BufferHandle<Self::Sample>,
+        buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
         voice_mask: <Self::Sample as SimdFloat>::Mask,
     ) {

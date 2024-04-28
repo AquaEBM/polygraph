@@ -12,8 +12,7 @@ pub struct ReadOnly<T: ?Sized>(Cell<T>);
 // SAFETY (for the `mem::transmute`s used in the implementations of `ReadOnly<T>`):
 //  - `ReadOnly<T>` has the same layout as `Cell<T>` (which in turn has the same layout as `T`).
 //  - `ReadOnly<T>`'s semantics and functionality (`ReadOnly::get`) are a subset of those of
-// `Cell<T>`, which, given the fact that one cannot convert from a `ReadOnly<T>` back to a
-// `Cell<T>`, garantees their soundness & the validity of the contained `T` value.
+// `Cell<T>`, which garantees that the invariants required by the inner `Cell<T>` aren't broken.
 //
 // - Through ellision rules, lifetimes are preserved and remain bounded.
 
@@ -92,23 +91,23 @@ pub(crate) unsafe fn new_zeroed_owned_buffer<T>(len: usize) -> OwnedBuffer<T> {
 // the tricks described in this discussion are used:
 // https://users.rust-lang.org/t/safe-interface-for-a-singly-linked-list-of-mutable-references/107401
 
-pub struct LocalBufferNode<'a, T> {
+pub struct BufferHandleLocal<'a, T> {
     // the most notable trick here is the usage of a trait object to represent a nested
-    // `BufferNode<'_, T>`. Since trait objects (dyn Trait + 'a) are covariant over their
-    // inner lifetime(s) ('a), this now compiles (and is usable in practice),
+    // `BufferHandle<'_, T>`. Since trait objects (dyn Trait + 'a) are covariant over their
+    // inner lifetime(s) ('a), this compiles (and is usable in practice),
     // in spite of &'a mut T being invariant over T.
-    parent: Option<&'a mut dyn BufferNodeImpl<T>>,
+    parent: Option<&'a mut dyn BufferHandleImpl<T>>,
     buffers: &'a mut [OwnedBuffer<T>],
 }
 
-impl<'a, T> Default for LocalBufferNode<'a, T> {
+impl<'a, T> Default for BufferHandleLocal<'a, T> {
     #[inline]
     fn default() -> Self {
         Self::toplevel(&mut [])
     }
 }
 
-impl<'a, T> LocalBufferNode<'a, T> {
+impl<'a, T> BufferHandleLocal<'a, T> {
     #[inline]
     pub fn toplevel(buffers: &'a mut [OwnedBuffer<T>]) -> Self {
         Self {
@@ -122,8 +121,8 @@ impl<'a, T> LocalBufferNode<'a, T> {
         self,
         inputs: &'a [Option<BufferIndex>],
         outputs: &'a [Option<OutputBufferIndex>],
-    ) -> BufferNode<'a, T> {
-        BufferNode {
+    ) -> BufferHandle<'a, T> {
+        BufferHandle {
             node: self,
             inputs,
             outputs,
@@ -131,8 +130,8 @@ impl<'a, T> LocalBufferNode<'a, T> {
     }
 
     #[inline]
-    pub fn with_buffer_pos(self, start: usize, len: NonZeroUsize) -> LocalBufferHandle<'a, T> {
-        LocalBufferHandle {
+    pub fn with_buffer_pos(self, start: usize, len: NonZeroUsize) -> BuffersLocal<'a, T> {
+        BuffersLocal {
             start,
             len,
             node: self,
@@ -184,7 +183,7 @@ pub enum BufferIndex {
     Output(OutputBufferIndex),
 }
 
-pub trait BufferNodeImpl<T> {
+pub trait BufferHandleImpl<T> {
     fn get_input(&mut self, index: usize) -> Option<&[T]>;
 
     fn get_input_shared(&self, index: usize) -> Option<&[ReadOnly<T>]>;
@@ -194,13 +193,13 @@ pub trait BufferNodeImpl<T> {
     fn get_output_shared(&self, index: usize) -> Option<&[Cell<T>]>;
 }
 
-pub struct BufferNode<'a, T> {
-    node: LocalBufferNode<'a, T>,
+pub struct BufferHandle<'a, T> {
+    node: BufferHandleLocal<'a, T>,
     inputs: &'a [Option<BufferIndex>],
     outputs: &'a [Option<OutputBufferIndex>],
 }
 
-impl<'a, T> Default for BufferNode<'a, T> {
+impl<'a, T> Default for BufferHandle<'a, T> {
     #[inline]
     fn default() -> Self {
         Self {
@@ -211,18 +210,18 @@ impl<'a, T> Default for BufferNode<'a, T> {
     }
 }
 
-impl<'a, T> BufferNode<'a, T> {
+impl<'a, T> BufferHandle<'a, T> {
     #[inline]
-    pub fn append<'b>(&'b mut self, buffers: &'b mut [OwnedBuffer<T>]) -> LocalBufferNode<'b, T> {
-        LocalBufferNode {
+    pub fn append<'b>(&'b mut self, buffers: &'b mut [OwnedBuffer<T>]) -> BufferHandleLocal<'b, T> {
+        BufferHandleLocal {
             parent: Some(self),
             buffers,
         }
     }
 
     #[inline]
-    pub fn with_buffer_pos(self, start: usize, len: NonZeroUsize) -> BufferHandle<'a, T> {
-        BufferHandle {
+    pub fn with_buffer_pos(self, start: usize, len: NonZeroUsize) -> Buffers<'a, T> {
+        Buffers {
             node: self,
             start,
             len,
@@ -230,7 +229,7 @@ impl<'a, T> BufferNode<'a, T> {
     }
 }
 
-impl<'a, T> BufferNodeImpl<T> for BufferNode<'a, T> {
+impl<'a, T> BufferHandleImpl<T> for BufferHandle<'a, T> {
     #[inline]
     fn get_input(&mut self, index: usize) -> Option<&[T]> {
         self.inputs.get(index).and_then(|maybe_index| {
@@ -260,20 +259,20 @@ impl<'a, T> BufferNodeImpl<T> for BufferNode<'a, T> {
     }
 }
 
-pub struct LocalBufferHandle<'a, T> {
+pub struct BuffersLocal<'a, T> {
     start: usize,
     len: NonZeroUsize,
-    node: LocalBufferNode<'a, T>,
+    node: BufferHandleLocal<'a, T>,
 }
 
-impl<'a, T> LocalBufferHandle<'a, T> {
+impl<'a, T> BuffersLocal<'a, T> {
     #[inline]
     pub fn with_indices(
         self,
         inputs: &'a [Option<BufferIndex>],
         outputs: &'a [Option<OutputBufferIndex>],
-    ) -> BufferHandle<'a, T> {
-        BufferHandle {
+    ) -> Buffers<'a, T> {
+        Buffers {
             start: self.start,
             len: self.len,
             node: self.node.with_indices(inputs, outputs),
@@ -309,21 +308,21 @@ impl<'a, T> LocalBufferHandle<'a, T> {
     }
 }
 
-pub struct BufferHandle<'a, T> {
+pub struct Buffers<'a, T> {
     start: usize,
     len: NonZeroUsize,
-    node: BufferNode<'a, T>,
+    node: BufferHandle<'a, T>,
 }
 
-impl<'a, T> BufferHandle<'a, T> {
+impl<'a, T> Buffers<'a, T> {
     #[inline]
     pub fn buffer_size(&self) -> NonZeroUsize {
         self.len
     }
 
     #[inline]
-    pub fn append<'b>(&'b mut self, buffers: &'b mut [OwnedBuffer<T>]) -> LocalBufferHandle<'b, T> {
-        LocalBufferHandle {
+    pub fn append<'b>(&'b mut self, buffers: &'b mut [OwnedBuffer<T>]) -> BuffersLocal<'b, T> {
+        BuffersLocal {
             node: self.node.append(buffers),
             start: self.start,
             len: self.len,

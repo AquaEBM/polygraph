@@ -3,7 +3,7 @@ extern crate alloc;
 use core::{iter, num::NonZeroUsize, ops::AddAssign};
 
 use super::{
-    buffer::{BufferHandle, BufferIndex, LocalBufferNode, OutputBufferIndex, OwnedBuffer},
+    buffer::{Buffers, BufferIndex, BufferHandleLocal, OutputBufferIndex, OwnedBuffer},
     processor::{new_vfloat_buffer, Processor},
     simd_util::{simd::num::SimdFloat, MaskAny, MaskSelect},
     voice::{VoiceEvent, VoiceManager},
@@ -67,8 +67,8 @@ where
         output_indices: &'a [Option<OutputBufferIndex>],
         start: usize,
         num_samples: NonZeroUsize,
-    ) -> BufferHandle<'a, T::Sample> {
-        let node = LocalBufferNode::toplevel(bufs);
+    ) -> Buffers<'a, T::Sample> {
+        let node = BufferHandleLocal::toplevel(bufs);
 
         let handle = node.with_indices(input_indices, output_indices);
 
