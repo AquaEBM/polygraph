@@ -54,7 +54,7 @@ impl<T> FixedDelayBuffer<T> {
     }
 
     #[inline]
-    pub fn delay(&mut self, buf: &mut [T]) {
+    fn delay_maybe_opt(&mut self, buf: &mut [T]) {
 
         let len = buf.len();
         let delay_len = self.buf.len();
@@ -77,13 +77,23 @@ impl<T> FixedDelayBuffer<T> {
             let rem_len = rem.len();
 
             self.buf[..rem_len].swap_with_slice(rem);
-            self.current = rem_len;
+            self.current = rem_len
         }
+    }
+
+    #[inline]
+    fn delay_maybe_naive(&mut self, buf: &mut [T]) {
+
+        buf.iter_mut().for_each(|sample| self.push_sample_ref(sample))
+    }
+
+    pub fn delay(&mut self, buf: &mut [T]) {
+        self.delay_maybe_opt(buf)
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
 
     use super::*;
 
@@ -91,12 +101,8 @@ mod tests {
     fn nani() {
         let mut buf = Vec::from_iter((0..12).map(|i| i as f32));
 
-        let mut delay = FixedDelayBuffer::new(NonZeroUsize::new(4).unwrap());
+        let mut delay = FixedDelayBuffer::new(NonZeroUsize::new(18).unwrap());
 
-        delay.delay(&mut buf);
-        delay.delay(&mut buf);
-        delay.delay(&mut buf);
-        delay.delay(&mut buf);
         delay.delay(&mut buf);
 
         println!("{buf:?}");

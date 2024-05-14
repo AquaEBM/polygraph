@@ -17,7 +17,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "core_simd"
 version = "0.1.0"
-source = "git+https://github.com/rust-lang/portable-simd.git#3125888c0aa39b955f371f51734ebe57a4d89fc6"
+source = "git+https://github.com/rust-lang/portable-simd.git#7cd6f95a13d742e482e3b4070d2c01e7b8d8bbfd"
 
 [[package]]
 name = "fnv"
@@ -46,7 +46,7 @@ dependencies = [
 [[package]]
 name = "simd_util"
 version = "0.1.0"
-source = "git+https://github.com/AquaEBM/simd_util.git#b8782a392e575ddc8209a6b781b91755ad1005a7"
+source = "git+https://github.com/AquaEBM/simd_util.git#ae9a7f07515cd3de6b92ac453dff13f12d9e0f5c"
 dependencies = [
  "cfg-if",
  "core_simd",
@@ -56,7 +56,7 @@ dependencies = [
 [[package]]
 name = "std_float"
 version = "0.1.0"
-source = "git+https://github.com/rust-lang/portable-simd.git#3125888c0aa39b955f371f51734ebe57a4d89fc6"
+source = "git+https://github.com/rust-lang/portable-simd.git#7cd6f95a13d742e482e3b4070d2c01e7b8d8bbfd"
 dependencies = [
  "core_simd",
 ]
