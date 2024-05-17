@@ -86,8 +86,10 @@ where
             .zip(self.vel_cache.iter_mut())
             .zip(self.note_cache.iter_mut())
             .enumerate()
-            .map(|(i, ((mask, vel), note))| (i, mem::take(mask), mem::take(vel), mem::take(note)))
-            .filter(|(_, mask, _, _)| mask.any())
+            .filter_map(|(i, ((mask, vel), note))| {
+                mask.any()
+                    .then(|| (i, mem::take(mask), mem::take(vel), mem::take(note)))
+            })
     }
 }
 

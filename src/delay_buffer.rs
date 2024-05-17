@@ -55,36 +55,34 @@ impl<T> FixedDelayBuffer<T> {
 
     #[inline]
     fn delay_maybe_opt(&mut self, buf: &mut [T]) {
+        // SAFETY: same as `Self::get_current`
+        let current = unsafe { self.buf.get_unchecked_mut(self.current..) };
 
-        let len = buf.len();
-        let delay_len = self.buf.len();
-        let k = delay_len - self.current;
+        if let Some((start, rem)) = buf.split_at_mut_checked(current.len()) {
+            // hopefully the checks are optimized away
+            current.swap_with_slice(start);
 
-        if len < k {
-            buf.swap_with_slice(&mut self.buf[self.current..][..len]);
-            self.current += len;
-        } else {
-            let (start, rem) = buf.split_at_mut(k);
-            self.buf[self.current..].swap_with_slice(start);
+            let mut iter = rem.chunks_exact_mut(self.buf.len());
 
-            let mut iter = rem.chunks_exact_mut(delay_len);
-
-            for chunk in iter.by_ref() {
-                self.buf.swap_with_slice(chunk);
-            }
+            iter.by_ref()
+                .for_each(|chunk| self.buf.swap_with_slice(chunk));
 
             let rem = iter.into_remainder();
             let rem_len = rem.len();
 
             self.buf[..rem_len].swap_with_slice(rem);
             self.current = rem_len
+        } else {
+            let len = buf.len();
+            buf.swap_with_slice(&mut current[..len]);
+            self.current += len;
         }
     }
 
     #[inline]
     fn delay_maybe_naive(&mut self, buf: &mut [T]) {
-
-        buf.iter_mut().for_each(|sample| self.push_sample_ref(sample))
+        buf.iter_mut()
+            .for_each(|sample| self.push_sample_ref(sample))
     }
 
     pub fn delay(&mut self, buf: &mut [T]) {

@@ -93,8 +93,8 @@ pub(crate) unsafe fn new_zeroed_owned_buffer<T>(len: usize) -> OwnedBuffer<T> {
 
 pub struct BufferHandleLocal<'a, T> {
     // the most notable trick here is the usage of a trait object to represent a nested
-    // `BufferHandle<'_, T>`. Since trait objects (dyn Trait + 'a) are covariant over their
-    // inner lifetime(s) ('a), this compiles (and is usable in practice),
+    // `BufferHandle<'_, T>`. Since trait objects (dyn Trait + '_) are covariant over their
+    // inner lifetime(s) ('_), this compiles (and is usable in practice),
     // in spite of &'a mut T being invariant over T.
     parent: Option<&'a mut dyn BufferHandleImpl<T>>,
     buffers: &'a mut [OwnedBuffer<T>],

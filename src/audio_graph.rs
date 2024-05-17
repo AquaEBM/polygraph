@@ -54,9 +54,9 @@ pub enum ProcessTask {
         right_input: BufferIndex,
         output: OutputBufferIndex,
     },
-    Copy {
+    CopyToMasterOutput {
         input: BufferIndex,
-        outputs: Box<[OutputBufferIndex]>,
+        outputs: Box<[usize]>,
     },
     Process {
         index: usize,
@@ -124,15 +124,8 @@ impl ProcessTask {
                 ),
                 buffer_replacements,
             ),
-
-            ProcessTask::Copy {
-                input,
-                outputs: output,
-            } => replace_with_global(
-                Self::filter_outputs_bufs(iter::once(input), output.iter_mut()),
-                buffer_replacements,
-            ),
             ProcessTask::Delay {} => todo!(),
+            _ => (),
         }
     }
 }

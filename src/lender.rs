@@ -1,5 +1,3 @@
-extern crate alloc;
-
 use alloc::sync::Arc;
 
 pub struct SharedLender<T: ?Sized> {

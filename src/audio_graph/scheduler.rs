@@ -106,7 +106,7 @@ impl Scheduler {
                         buffer_copies
                             .entry(buf)
                             .or_insert_with(HashSet::default)
-                            .insert(OutputBufferIndex::Master(this_port_idx));
+                            .insert(this_port_idx);
                     }
 
                     BufferIndex::Output(OutputBufferIndex::Local(i)) => {
@@ -114,7 +114,7 @@ impl Scheduler {
                             buffer_copies
                                 .entry(BufferIndex::Output(OutputBufferIndex::Master(index)))
                                 .or_insert_with(HashSet::default)
-                                .insert(OutputBufferIndex::Master(this_port_idx));
+                                .insert(this_port_idx);
                         } else {
                             buffer_replacements.insert(i, this_port_idx);
                         }
@@ -129,14 +129,12 @@ impl Scheduler {
             .iter_mut()
             .for_each(|task| task.replace_and_shift_output_buffers(&buffer_replacements));
 
-        final_schedule.extend(
-            buffer_copies
-                .iter()
-                .map(|(&input, outputs)| ProcessTask::Copy {
-                    input,
-                    outputs: outputs.iter().copied().collect(),
-                }),
-        );
+        final_schedule.extend(buffer_copies.iter().map(|(&input, outputs)| {
+            ProcessTask::CopyToMasterOutput {
+                input,
+                outputs: outputs.iter().copied().collect(),
+            }
+        }));
 
         (
             final_schedule,

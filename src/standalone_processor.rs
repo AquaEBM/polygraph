@@ -2,8 +2,10 @@ extern crate alloc;
 
 use core::{iter, num::NonZeroUsize, ops::AddAssign};
 
+use crate::processor::NoParams;
+
 use super::{
-    buffer::{Buffers, BufferIndex, BufferHandleLocal, OutputBufferIndex, OwnedBuffer},
+    buffer::{BufferHandleLocal, BufferIndex, Buffers, OutputBufferIndex, OwnedBuffer},
     processor::{new_vfloat_buffer, Processor},
     simd_util::{simd::num::SimdFloat, MaskAny, MaskSelect},
     voice::{VoiceEvent, VoiceManager},
@@ -68,11 +70,9 @@ where
         start: usize,
         num_samples: NonZeroUsize,
     ) -> Buffers<'a, T::Sample> {
-        let node = BufferHandleLocal::toplevel(bufs);
-
-        let handle = node.with_indices(input_indices, output_indices);
-
-        handle.with_buffer_pos(start, num_samples)
+        BufferHandleLocal::toplevel(bufs)
+            .with_indices(input_indices, output_indices)
+            .with_buffer_pos(start, num_samples)
     }
 
     pub fn process(&mut self, current_sample: usize, num_samples: NonZeroUsize)
@@ -90,9 +90,9 @@ where
                     cluster_idx,
                     mask,
                 } => {
-                    self.processor.reset(cluster_idx, mask.clone());
+                    self.processor.reset(cluster_idx, mask.clone(), &NoParams);
                     self.processor
-                        .activate_voices(cluster_idx, mask, velocity, note);
+                        .set_voice_note(cluster_idx, mask, velocity, note);
                 }
 
                 VoiceEvent::Deactivate {
@@ -110,7 +110,7 @@ where
 
         let mut cluster_idxs = (0..self.max_num_clusters).filter_map(|cluster_idx| {
             let mask = self.vm.get_voice_mask(cluster_idx);
-            mask.any().then_some((cluster_idx, mask))
+            mask.clone().any().then_some((cluster_idx, mask))
         });
 
         let range = current_sample..current_sample + num_samples.get();
@@ -188,5 +188,13 @@ where
 
     pub fn get_buffers(&mut self) -> &mut [OwnedBuffer<T::Sample>] {
         self.main_bufs.as_mut()
+    }
+
+    pub fn processor(&self) -> &T {
+        &self.processor
+    }
+
+    pub fn processor_mut(&mut self) -> &mut T {
+        &mut self.processor
     }
 }
