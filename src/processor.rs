@@ -1,54 +1,94 @@
 use simd_util::{simd::num::SimdFloat, MaskSplat};
 
-use crate::buffer::OutputBufferIndex;
-
 use super::{
     audio_graph::{AudioGraph, ProcessTask},
-    buffer::{new_zeroed_owned_buffer, Buffers, OwnedBuffer},
+    buffer::{new_vfloat_buffer, Buffer, Buffers, OutputBufferIndex},
 };
 
 use alloc::sync::Arc;
 use core::{
+    cell::Cell,
     iter, mem,
     ops::{Add, BitAndAssign},
 };
 use std::io::{Read, Write};
 
-pub trait Parameters<T> {
-    fn get_param(&self, id: u64) -> Option<T>;
-    fn get_changed(&self, id: u64) -> Option<T>;
-    fn modulation_state(&self, id: u64) -> Option<bool>;
+pub struct ParameterMut<'a, T: SimdFloat> {
+    value: &'a mut T,
+    mod_state: &'a mut T::Mask,
+    changed: &'a mut bool,
 }
 
-pub struct NoParams;
-
-impl<T> Parameters<T> for NoParams {
-    fn get_param(&self, _id: u64) -> Option<T> {
-        None
+impl<'a, T: SimdFloat> ParameterMut<'a, T> {
+    pub fn new(value: &'a mut T, mod_state: &'a mut T::Mask, changed: &'a mut bool) -> Self {
+        Self {
+            value,
+            mod_state,
+            changed,
+        }
     }
 
-    fn get_changed(&self, _id: u64) -> Option<T> {
-        None
+    pub fn set_value(&mut self, val: T) {
+        *self.value = val;
+        *self.changed = true;
     }
 
-    fn modulation_state(&self, _id: u64) -> Option<bool> {
-        None
+    pub fn changed(&self) -> bool {
+        *self.changed
+    }
+
+    pub fn mod_state(&self) -> &T::Mask {
+        self.mod_state
+    }
+
+    pub fn set_mod_state(&mut self, mask: T::Mask) {
+        *self.mod_state = mask;
     }
 }
 
-pub struct ClusterParams<'a, T>(&'a [T]);
+pub struct Parameter<'a, T: SimdFloat> {
+    value: &'a T,
+    mod_state: &'a T::Mask,
+    changed: &'a Cell<bool>,
+}
 
-impl<'a, T: Clone> Parameters<T> for ClusterParams<'a, T> {
-    fn get_param(&self, id: u64) -> Option<T> {
-        self.0.get(id as usize).cloned()
+impl<'a, T: SimdFloat> Parameter<'a, T> {
+    pub fn new(value: &'a T, mod_state: &'a T::Mask, changed: &'a Cell<bool>) -> Self {
+        Self {
+            value,
+            mod_state,
+            changed,
+        }
     }
 
-    fn get_changed(&self, id: u64) -> Option<T> {
-        self.get_param(id)
+    pub fn value(&self) -> &'a T {
+        self.value
     }
 
-    fn modulation_state(&self, id: u64) -> Option<bool> {
-        ((id as usize) < self.0.len()).then_some(false)
+    pub fn changed(&self) -> bool {
+        self.changed.get()
+    }
+
+    pub fn value_if_changed(&self) -> Option<&'a T> {
+        self.changed.take().then_some(self.value)
+    }
+
+    pub fn mod_state(&self) -> &'a T::Mask {
+        self.mod_state
+    }
+}
+
+pub trait Parameters<T: SimdFloat> {
+    fn get(&self, id: u64) -> Option<Parameter<T>>;
+    fn get_mut(&mut self, id: u64) -> Option<ParameterMut<T>>;
+}
+
+impl<T: SimdFloat> Parameters<T> for () {
+    fn get(&self, _id: u64) -> Option<Parameter<T>> {
+        None
+    }
+    fn get_mut(&mut self, _id: u64) -> Option<ParameterMut<T>> {
+        None
     }
 }
 
@@ -57,9 +97,7 @@ pub trait PersistentState {
     fn de(&self, reader: &mut dyn Read);
 }
 
-pub struct NoPersistentState;
-
-impl PersistentState for NoPersistentState {
+impl PersistentState for () {
     fn ser(&self, _writer: &mut dyn Write) {}
     fn de(&self, _reader: &mut dyn Read) {}
 }
@@ -73,21 +111,21 @@ pub trait Processor {
     }
 
     fn persistent_state_handle(&self) -> Arc<dyn PersistentState> {
-        Arc::new(NoPersistentState)
+        Arc::new(())
     }
 
     fn process(
         &mut self,
         buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
-        voice_mask: <Self::Sample as SimdFloat>::Mask,
+        params: &dyn Parameters<Self::Sample>,
     ) -> <Self::Sample as SimdFloat>::Mask;
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) -> usize {
         0
     }
 
-    fn set_voice_note(
+    fn set_voice_notes(
         &mut self,
         cluster_idx: usize,
         voice_mask: <Self::Sample as SimdFloat>::Mask,
@@ -115,16 +153,10 @@ pub trait Processor {
     fn move_state(&mut self, from: (usize, usize), to: (usize, usize)) {}
 }
 
-pub fn new_vfloat_buffer<T: SimdFloat>(len: usize) -> OwnedBuffer<T> {
-    // SAFETY: `f32`s and 'f64's (and thus `Simd<f32, N>`s and `Simd<f64, N>`s,
-    // the only implementors of `SimdFloat`) are safely zeroable
-    unsafe { new_zeroed_owned_buffer(len) }
-}
-
 pub struct AudioGraphProcessor<T: Processor> {
     processors: Box<[Option<T>]>,
     schedule: Vec<ProcessTask>,
-    buffers: Box<[OwnedBuffer<T::Sample>]>,
+    buffers: Box<[Buffer<T::Sample>]>,
     layout: (usize, usize),
 }
 
@@ -154,8 +186,8 @@ impl<T: Processor> AudioGraphProcessor<T> {
 
     pub fn replace_buffers(
         &mut self,
-        buffers: Box<[OwnedBuffer<T::Sample>]>,
-    ) -> Box<[OwnedBuffer<T::Sample>]> {
+        buffers: Box<[Buffer<T::Sample>]>,
+    ) -> Box<[Buffer<T::Sample>]> {
         mem::replace(&mut self.buffers, buffers)
     }
 
@@ -212,7 +244,7 @@ where
         &mut self,
         mut buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
-        voice_mask: <Self::Sample as SimdFloat>::Mask,
+        _params: &dyn Parameters<Self::Sample>,
     ) -> <Self::Sample as SimdFloat>::Mask {
         let mut mask = <Self::Sample as SimdFloat>::Mask::splat(true);
 
@@ -260,7 +292,7 @@ where
                         .get_mut(*index)
                         .and_then(Option::as_mut)
                         .unwrap()
-                        .process(bufs, cluster_idx, voice_mask.clone());
+                        .process(bufs, cluster_idx, &());
                 }
                 ProcessTask::Delay {} => todo!(),
             }
@@ -288,14 +320,14 @@ where
         _params: &dyn Parameters<Self::Sample>,
     ) {
         self.processors()
-            .for_each(|proc| proc.reset(cluster_idx, voice_mask.clone(), &NoParams))
+            .for_each(|proc| proc.reset(cluster_idx, voice_mask.clone(), &()))
     }
 
     fn move_state(&mut self, from: (usize, usize), to: (usize, usize)) {
         self.processors().for_each(|proc| proc.move_state(from, to))
     }
 
-    fn set_voice_note(
+    fn set_voice_notes(
         &mut self,
         cluster_idx: usize,
         voice_mask: <Self::Sample as SimdFloat>::Mask,
@@ -303,7 +335,7 @@ where
         note: <Self::Sample as SimdFloat>::Bits,
     ) {
         self.processors().for_each(|proc| {
-            proc.set_voice_note(cluster_idx, voice_mask.clone(), velocity, note.clone())
+            proc.set_voice_notes(cluster_idx, voice_mask.clone(), velocity, note.clone())
         })
     }
 
@@ -329,9 +361,9 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
         &mut self,
         buffers: Buffers<Self::Sample>,
         cluster_idx: usize,
-        voice_mask: <Self::Sample as SimdFloat>::Mask,
+        params: &dyn Parameters<Self::Sample>,
     ) -> <Self::Sample as SimdFloat>::Mask {
-        self.as_mut().process(buffers, cluster_idx, voice_mask)
+        self.as_mut().process(buffers, cluster_idx, params)
     }
 
     fn initialize(&mut self, sr: f32, max_buffer_size: usize, max_num_clusters: usize) -> usize {
@@ -352,7 +384,7 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
         self.as_mut().move_state(from, to);
     }
 
-    fn set_voice_note(
+    fn set_voice_notes(
         &mut self,
         cluster_idx: usize,
         voice_mask: <Self::Sample as SimdFloat>::Mask,
@@ -360,7 +392,7 @@ impl<T: ?Sized + Processor> Processor for Box<T> {
         note: <Self::Sample as SimdFloat>::Bits,
     ) {
         self.as_mut()
-            .set_voice_note(cluster_idx, voice_mask, velocity, note);
+            .set_voice_notes(cluster_idx, voice_mask, velocity, note);
     }
 
     fn deactivate_voices(

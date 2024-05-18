@@ -1,7 +1,7 @@
 use core::{cell::Cell, mem, num::NonZeroUsize};
 
 use simd_util::{
-    simd::{Simd, SimdElement},
+    simd::{num::SimdFloat, Simd, SimdElement},
     split_stereo_cell, FLOATS_PER_VECTOR, STEREO_VOICES_PER_VECTOR,
 };
 
@@ -71,15 +71,21 @@ impl<T: SimdElement> ReadOnly<[Simd<T, FLOATS_PER_VECTOR>]> {
     }
 }
 
-pub type OwnedBuffer<T> = Box<Cell<[T]>>;
+pub type Buffer<T> = Box<Cell<[T]>>;
 
 /// # Safety
-/// T must be safely zeroable
+/// All bit patterns for type T must be valid,
 #[inline]
-pub(crate) unsafe fn new_zeroed_owned_buffer<T>(len: usize) -> OwnedBuffer<T> {
-    // SAFETY: T is zeroable, Cell<T> has the same layout as T, thus, by extension, Cell<[T]>
-    // has the same layout as [T]
-    mem::transmute(Box::<[T]>::new_zeroed_slice(len).assume_init())
+pub(crate) unsafe fn new_owned_buffer<T>(len: usize) -> Buffer<T> {
+    // SAFETY: Cell<T> has the same layout as T, thus, by extension, Cell<[T]>
+    // has the same layout as [T] + garantee specified in the doc
+    mem::transmute(Box::<[T]>::new_uninit_slice(len).assume_init())
+}
+
+pub fn new_vfloat_buffer<T: SimdFloat>(len: usize) -> Buffer<T> {
+    // SAFETY: `f32`s and 'f64's (and thus `Simd<f32, N>`s and `Simd<f64, N>`s,
+    // the only implementors of `SimdFloat`) are safely zeroable
+    unsafe { new_owned_buffer(len) }
 }
 
 // TODO: name bikeshedding
@@ -97,7 +103,7 @@ pub struct BufferHandleLocal<'a, T> {
     // inner lifetime(s) ('_), this compiles (and is usable in practice),
     // in spite of &'a mut T being invariant over T.
     parent: Option<&'a mut dyn BufferHandleImpl<T>>,
-    buffers: &'a mut [OwnedBuffer<T>],
+    buffers: &'a mut [Buffer<T>],
 }
 
 impl<'a, T> Default for BufferHandleLocal<'a, T> {
@@ -109,7 +115,7 @@ impl<'a, T> Default for BufferHandleLocal<'a, T> {
 
 impl<'a, T> BufferHandleLocal<'a, T> {
     #[inline]
-    pub fn toplevel(buffers: &'a mut [OwnedBuffer<T>]) -> Self {
+    pub fn toplevel(buffers: &'a mut [Buffer<T>]) -> Self {
         Self {
             parent: None,
             buffers,
@@ -212,7 +218,7 @@ impl<'a, T> Default for BufferHandle<'a, T> {
 
 impl<'a, T> BufferHandle<'a, T> {
     #[inline]
-    pub fn append<'b>(&'b mut self, buffers: &'b mut [OwnedBuffer<T>]) -> BufferHandleLocal<'b, T> {
+    pub fn append<'b>(&'b mut self, buffers: &'b mut [Buffer<T>]) -> BufferHandleLocal<'b, T> {
         BufferHandleLocal {
             parent: Some(self),
             buffers,
@@ -321,7 +327,7 @@ impl<'a, T> Buffers<'a, T> {
     }
 
     #[inline]
-    pub fn append<'b>(&'b mut self, buffers: &'b mut [OwnedBuffer<T>]) -> BuffersLocal<'b, T> {
+    pub fn append<'b>(&'b mut self, buffers: &'b mut [Buffer<T>]) -> BuffersLocal<'b, T> {
         BuffersLocal {
             node: self.node.append(buffers),
             start: self.start,

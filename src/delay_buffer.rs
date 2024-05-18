@@ -37,7 +37,9 @@ impl<T> FixedDelayBuffer<T> {
     #[inline]
     fn wrap_index(&mut self) {
         self.current += 1;
-        self.current *= (self.current != self.buf.len()) as usize;
+        if self.current == self.buf.len() {
+            self.current = 0;
+        }
     }
 
     #[inline]
