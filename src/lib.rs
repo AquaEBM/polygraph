@@ -82,7 +82,10 @@ impl Node {
 
     #[inline]
     pub fn add_input(&mut self) -> InputID {
-        for id in (0..).into_iter().map(InputID) {
+        #[allow(clippy::useless_conversion)]
+        let all_numbers = (0..).into_iter().map(InputID);
+
+        for id in all_numbers {
             if !self.inputs.contains_key(&id) {
                 self.inputs.insert(id.clone(), Input::default());
                 return id;
@@ -99,7 +102,10 @@ impl Node {
 
     #[inline]
     pub fn add_output(&mut self) -> OutputID {
-        for id in (0..).into_iter().map(OutputID) {
+        #[allow(clippy::useless_conversion)]
+        let all_numbers = (0..).into_iter().map(OutputID);
+
+        for id in all_numbers {
             if !self.output_ids.contains(&id) {
                 self.output_ids.insert(id.clone());
                 return id;
@@ -249,6 +255,7 @@ impl Scheduler {
         for node_id in process_order {
             let node = transposed.get_node_mut(&node_id).unwrap();
 
+            #[allow(clippy::clone_on_copy)]
             let inputs = node
                 .output_ids()
                 .iter()
@@ -261,15 +268,11 @@ impl Scheduler {
             let outputs = node
                 .inputs()
                 .iter()
-                .map(|(InputID(id), port)| {
-                    (
-                        OutputID(id.clone()),
-                        if port.connections().is_empty() {
-                            usize::MAX
-                        } else {
-                            allocator.get_free()
-                        },
-                    )
+                .filter(|(_, port)| !port.connections().is_empty())
+                .map(|(InputID(id), _)| {
+                    #[allow(clippy::clone_on_copy)]
+                    let id = id.clone();
+                    (OutputID(id), allocator.get_free())
                 })
                 .collect();
 
@@ -283,12 +286,7 @@ impl Scheduler {
                 panic!()
             };
 
-            for (buf_index, port) in outputs
-                .clone()
-                .into_values()
-                .zip(node.inputs.values_mut())
-                .filter(|(i, _)| i != &usize::MAX)
-            {
+            for (buf_index, port) in outputs.clone().into_values().zip(node.inputs.values()) {
                 for port_idx in allocator.claim(
                     buf_index,
                     port.connections()
@@ -342,9 +340,9 @@ impl AudioGraph {
             return;
         }
 
-        let node = transposed.get_node(node_index).unwrap();
+        let this_node = transposed.get_node(node_index).unwrap();
 
-        for (output_id, input) in node.inputs().iter() {
+        for (output_id, input) in this_node.inputs().iter() {
             let output_id = OutputID(output_id.clone().0);
 
             for (node_idx, port_indices) in input.connections().iter() {
@@ -392,7 +390,7 @@ impl AudioGraph {
                     node_idx.clone(),
                     self.get_node(&node_idx).unwrap().with_reversed_io_layout()
                 )
-                .is_ok(),);
+                .is_ok());
             transposed.fill_inputs(self, &node_idx, &mut process_order);
         }
 
@@ -410,7 +408,6 @@ impl AudioGraph {
 
 impl AudioGraph {
     #[inline]
-    #[must_use]
     pub fn try_insert_edge(
         &mut self,
         from: (NodeID, OutputID),
@@ -423,7 +420,7 @@ impl AudioGraph {
             .is_none()
             || self
                 .get_node(&from.0)
-                .map_or(true, |node| !node.output_ids().contains(&from.1))
+                .is_none_or(|node| !node.output_ids().contains(&from.1))
         {
             return Err(false);
         }
@@ -479,7 +476,10 @@ impl AudioGraph {
 
     #[inline]
     pub fn insert_node(&mut self, node: Node) -> NodeID {
-        for i in (0..).into_iter().map(NodeID) {
+        #[allow(clippy::useless_conversion)]
+        let all_numbers = (0..).into_iter().map(NodeID);
+
+        for i in all_numbers {
             if !self.nodes.contains_key(&i) {
                 self.nodes.insert(i.clone(), node);
                 return i;

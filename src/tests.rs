@@ -297,7 +297,7 @@ fn test_m_graph() {
     // As an example of the above comment, it is possible to schedule this graph in a way that requires
     // 3 buffers, because the traversal order when computing said schedule depends on the hash function.
 
-    // bad insertion order
+    // bad "traversal" order
 
     // for (master_port, node_port) in [
     //     (
@@ -381,6 +381,8 @@ fn test_m_graph() {
 
 #[test]
 fn mutiple_input_ports() {
+    const NUM_INPUT_PORTS: usize = 4;
+
     let mut graph = AudioGraph::default();
 
     let mut master = Node::default();
@@ -392,7 +394,7 @@ fn mutiple_input_ports() {
     let source_node_id = graph.insert_node(source_node);
 
     let mut sink_node = Node::default();
-    let sink_node_input_ids: [_; 4] = array::from_fn(|_i| sink_node.add_input());
+    let sink_node_input_ids: [_; NUM_INPUT_PORTS] = array::from_fn(|_i| sink_node.add_input());
     let sink_node_output_id = sink_node.add_output();
     let sink_node_id = graph.insert_node(sink_node);
 
