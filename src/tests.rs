@@ -297,7 +297,7 @@ fn test_m_graph() {
     // As an example of the above comment, it is possible to schedule this graph in a way that requires
     // 3 buffers, because the traversal order when computing said schedule depends on the hash function.
 
-    // bad "traversal" order
+    // bad insertion order
 
     // for (master_port, node_port) in [
     //     (

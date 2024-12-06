@@ -1,13 +1,29 @@
-use core::{hash::Hash, mem, ops::Index};
+use core::{hash::Hash, iter, mem, ops::Index};
 use fnv::{FnvHashMap, FnvHashSet};
 use std::collections::hash_map::Entry;
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub struct InputID(u32);
-#[derive(Hash, PartialEq, Eq, Clone, Debug)]
-pub struct NodeID(u32);
+
+impl InputID {
+    #[inline]
+    pub fn transpose(self) -> OutputID {
+        OutputID(self.0)
+    }
+}
+
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub struct OutputID(u32);
+
+impl OutputID {
+    #[inline]
+    pub fn transpose(self) -> InputID {
+        InputID(self.0)
+    }
+}
+
+#[derive(Hash, PartialEq, Eq, Clone, Debug)]
+pub struct NodeID(u32);
 
 #[cfg(test)]
 mod tests;
@@ -59,18 +75,19 @@ pub struct Node {
 
 impl Node {
     fn with_reversed_io_layout(&self) -> Self {
+        let Self {
+            latency,
+            output_ids,
+            inputs,
+        } = self;
         Self {
-            latency: self.latency,
-            output_ids: self
-                .inputs
-                .keys()
-                .cloned()
-                .map(|InputID(id)| OutputID(id))
-                .collect(),
-            inputs: self
-                .output_ids
+            latency: *latency,
+            output_ids: inputs.keys().cloned().map(InputID::transpose).collect(),
+            inputs: output_ids
                 .iter()
-                .map(|id| (InputID(id.clone().0), Input::default()))
+                .cloned()
+                .map(OutputID::transpose)
+                .zip(iter::repeat_with(Input::default))
                 .collect(),
         }
     }
@@ -153,9 +170,7 @@ impl BufferAllocator {
 
         get_or_insert_empty_set_index(&mut self.ports)
     }
-}
 
-impl BufferAllocator {
     fn claim(
         &mut self,
         buffer_index: usize,
@@ -168,7 +183,7 @@ impl BufferAllocator {
             "INTERNAL ERROR: cannot claim currently claimed buffer"
         );
 
-        // use `HashSet::extract_if` if it get's stabilised
+        // use `HashSet::extract_if` if it gets stabilised
 
         let (new, old) = std::mem::take(port_idxs).into_iter().partition(|port| {
             if self.buffers.contains_key(port) {
@@ -259,21 +274,17 @@ impl Scheduler {
             let inputs = node
                 .output_ids()
                 .iter()
-                .map(|OutputID(id)| {
-                    let id = InputID(id.clone());
-                    (id.clone(), allocator.remove_claim(&(node_id.clone(), id)))
-                })
+                .cloned()
+                .map(OutputID::transpose)
+                .map(|id| (id.clone(), allocator.remove_claim(&(node_id.clone(), id))))
                 .collect();
 
             let outputs = node
                 .inputs()
                 .iter()
                 .filter(|(_, port)| !port.connections().is_empty())
-                .map(|(InputID(id), _)| {
-                    #[allow(clippy::clone_on_copy)]
-                    let id = id.clone();
-                    (OutputID(id), allocator.get_free())
-                })
+                .map(|(id, _)| id.clone().transpose())
+                .zip(iter::repeat_with(|| allocator.get_free()))
                 .collect();
 
             schedule.push(Task::Node {
@@ -292,9 +303,7 @@ impl Scheduler {
                     port.connections()
                         .iter()
                         .flat_map(|(node, ports)| {
-                            ports
-                                .iter()
-                                .map(move |p| (node.clone(), InputID(p.clone().0)))
+                            ports.iter().map(|p| (node.clone(), p.clone().transpose()))
                         })
                         .collect(),
                 ) {
@@ -342,13 +351,13 @@ impl AudioGraph {
 
         let this_node = transposed.get_node(node_index).unwrap();
 
-        for (output_id, input) in this_node.inputs().iter() {
-            let output_id = OutputID(output_id.clone().0);
+        for (id, input) in this_node.inputs().iter() {
+            let output_id = id.clone().transpose();
 
             for (node_idx, port_indices) in input.connections().iter() {
                 self.fill_inputs(transposed, node_idx, processed);
 
-                for input_id in port_indices.iter().cloned().map(|OutputID(id)| InputID(id)) {
+                for input_id in port_indices.iter().cloned().map(OutputID::transpose) {
                     let node = if let Some(node) = self.get_node_mut(node_idx) {
                         node
                     } else {
@@ -359,7 +368,7 @@ impl AudioGraph {
                                 .unwrap()
                                 .with_reversed_io_layout(),
                         ) else {
-                            unreachable!("inconsistent Hash and Eq implementations for NodeID?");
+                            panic!("inconsistent Hash and Eq implementations for NodeID?");
                         };
 
                         node
