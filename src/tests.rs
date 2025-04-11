@@ -1,435 +1,273 @@
 use super::*;
-use core::{array, convert::identity as id, iter::zip, ops::Not};
+use core::{array, convert::identity, ops::Not};
 
 // These tests aren't ideal, I have to print the compiled schedule and review it first,
-// then insert it as the rhs of the final assert directive if it's correct. This is inconvenient,
-// since there are usually many correct schedules, and any update to the graph's traversal order
-// will break these tests, in spite of, theoretically, still creating correct schedules.
+// then insert it in the final assert directive if it's correct (TODO). This is inconvenient,
+// since there are often many correct schedules, and any update to the graph's traversal order
+// (optimizations, different hashing algorithms...) will break these tests, despite still
+// creating correct schedules.
+
+fn insert_success(graph: &mut Graph, from: (NodeID, OutputID), to: (&NodeID, &InputID)) {
+    assert!(graph.try_insert_edge(from, to).is_ok_and(identity))
+}
 
 #[test]
 fn basic_cycle() {
-    let mut graph = AudioGraph::default();
+    let mut graph = Graph::default();
 
-    let mut node1 = Node::default();
+    let (node1_id, node1) = graph.insert_node();
     let node1_input_id = node1.add_input();
-    let node1_output_id = node1.add_output();
-    let node1_id = graph.insert_node(node1);
-
-    let mut node2 = Node::default();
-    let node2_input_id = node2.add_input();
-    let node2_output_id = node2.add_output();
-    let node2_id = graph.insert_node(node2);
+    let node1_output_id = node1.add_output(0);
 
     assert!(graph
-        .try_insert_edge(
-            (node2_id.clone(), node2_output_id),
-            (node1_id.clone(), node1_input_id),
-        )
-        .is_ok_and(id));
-    assert!(graph
-        .try_insert_edge((node1_id, node1_output_id), (node2_id, node2_input_id))
-        .is_err_and(id));
+        .try_insert_edge((node1_id, node1_output_id), (&node1_id, &node1_input_id))
+        .is_err_and(identity))
 }
 
 #[test]
 fn insert_redundant_edge() {
-    let mut graph = AudioGraph::default();
+    let mut graph = Graph::default();
 
-    let mut node1 = Node::default();
-    let node1_output = node1.add_output();
-    let node1_id = graph.insert_node(node1);
+    let (node1_id, node1) = graph.insert_node();
+    let node1_output = node1.add_output(0);
 
-    let mut node2 = Node::default();
+    let (node2_id, node2) = graph.insert_node();
     let node2_input = node2.add_input();
-    let node2_id = graph.insert_node(node2);
 
+    insert_success(
+        &mut graph,
+        (node1_id, node1_output),
+        (&node2_id, &node2_input),
+    );
     assert!(graph
-        .try_insert_edge(
-            (node1_id.clone(), node1_output.clone()),
-            (node2_id.clone(), node2_input.clone()),
-        )
-        .is_ok_and(id));
-    assert!(graph
-        .try_insert_edge((node1_id, node1_output), (node2_id, node2_input))
+        .try_insert_edge((node1_id, node1_output), (&node2_id, &node2_input))
         .is_ok_and(Not::not));
 }
 
 #[test]
 fn test_basic() {
-    let mut graph = AudioGraph::default();
+    let mut graph = Graph::default();
 
-    let mut master = Node::default();
+    let (master_id, master) = graph.insert_node();
+
     let master_input_id = master.add_input();
-    let master_id = graph.insert_node(master);
 
-    let mut node = Node::default();
-    let node_output_id = node.add_output();
-    let node_id = graph.insert_node(node);
+    let (source_id, source) = graph.insert_node();
+    let source_output_id = source.add_output(5);
 
-    assert!(graph
-        .try_insert_edge(
-            (node_id.clone(), node_output_id.clone()),
-            (master_id.clone(), master_input_id.clone()),
-        )
-        .is_ok_and(id));
-
-    let (num_buffers, schedule) = graph.compile([master_id.clone()]);
-
-    assert_eq!(
-        schedule,
-        &[
-            Task::node(node_id, [], [(node_output_id, 0)]),
-            Task::node(master_id, [(master_input_id, 0)], []),
-        ]
+    insert_success(
+        &mut graph,
+        (source_id, source_output_id),
+        (&master_id, &master_input_id),
     );
 
-    assert_eq!(num_buffers, 1);
+    let mut scheduler = graph.scheduler();
+
+    scheduler.add_sink_node(&master_id);
+
+    let schedule = scheduler.compile();
+
+    println!("{:#?}", schedule);
 }
 
 #[test]
-fn test_chain() {
-    let mut graph = AudioGraph::default();
+fn chain() {
+    let mut graph = Graph::default();
 
-    let mut master = Node::default();
+    let (source_id, source) = graph.insert_node();
+    let node1_output_id = source.add_output(4);
+
+    let (int1_id, int1) = graph.insert_node();
+    let int1_output_id = int1.add_output(6);
+    let int1_input_id = int1.add_input();
+
+    let (int2_id, int2) = graph.insert_node();
+    let int2_output_id = int2.add_output(9);
+    let int2_input_id = int2.add_input();
+
+    let (master_id, master) = graph.insert_node();
     let master_input_id = master.add_input();
-    let master_id = graph.insert_node(master);
 
-    let mut node1 = Node::default();
-    let node1_output_id = node1.add_output();
-    let node1_id = graph.insert_node(node1);
-
-    let mut node2 = Node::default();
-    let node2_output_id = node2.add_output();
-    let node2_input_id = node2.add_input();
-    let node2_id = graph.insert_node(node2);
-
-    let mut node3 = Node::default();
-    let node3_output_id = node3.add_output();
-    let node3_input_id = node3.add_input();
-    let node3_id = graph.insert_node(node3);
-
-    assert!(graph
-        .try_insert_edge(
-            (node1_id.clone(), node1_output_id.clone()),
-            (node2_id.clone(), node2_input_id.clone())
-        )
-        .is_ok_and(id));
-    assert!(graph
-        .try_insert_edge(
-            (node2_id.clone(), node2_output_id.clone()),
-            (node3_id.clone(), node3_input_id.clone())
-        )
-        .is_ok_and(id));
-    assert!(graph
-        .try_insert_edge(
-            (node3_id.clone(), node3_output_id.clone()),
-            (master_id.clone(), master_input_id.clone())
-        )
-        .is_ok_and(id));
-
-    let (num_buffers, schedule) = graph.compile([master_id.clone()]);
-
-    assert_eq!(
-        schedule,
-        &[
-            Task::node(node1_id, [], [(node1_output_id, 0)]),
-            Task::node(node2_id, [(node2_input_id, 0)], [(node2_output_id, 0)]),
-            Task::node(node3_id, [(node3_input_id, 0)], [(node3_output_id, 0)]),
-            Task::node(master_id, [(master_input_id, 0)], []),
-        ]
+    insert_success(
+        &mut graph,
+        (source_id, node1_output_id),
+        (&int1_id, &int1_input_id),
+    );
+    insert_success(
+        &mut graph,
+        (int1_id, int1_output_id),
+        (&int2_id, &int2_input_id),
+    );
+    insert_success(
+        &mut graph,
+        (int2_id, int2_output_id),
+        (&master_id, &master_input_id),
     );
 
-    assert_eq!(num_buffers, 1);
+    let mut scheduler = graph.scheduler();
+
+    scheduler.add_sink_node(&master_id);
+
+    let schedule = scheduler.compile();
+
+    println!("{schedule:#?}");
 }
 
 #[test]
-fn test_mutiple_outputs() {
-    let mut graph = AudioGraph::default();
+fn one_output_many_input_nodes() {
+    let mut graph = Graph::default();
 
-    let mut master: [_; 4] = array::from_fn(|_| Node::default());
-    let mut node = master.clone();
+    let (source_id, source) = graph.insert_node();
+    let source_output_id = source.add_output(10);
 
-    let master_input_id = master.each_mut().map(Node::add_input);
-    let node_output_id = node.each_mut().map(Node::add_output);
+    let master: [_; 4] = array::from_fn(|_| {
+        let (node_id, node) = graph.insert_node();
+        let input_id = node.add_input();
 
-    let mut insert_node = |node| graph.insert_node(node);
+        insert_success(
+            &mut graph,
+            (source_id, source_output_id),
+            (&node_id, &input_id),
+        );
 
-    let master_id = master.map(&mut insert_node);
-    let node_id = node.map(insert_node);
-
-    assert!(zip(
-        zip(&node_id, &node_output_id),
-        zip(&master_id, &master_input_id),
-    )
-    .all(|((node, output), (master, input))| graph
-        .try_insert_edge(
-            (node.clone(), output.clone()),
-            (master.clone(), input.clone()),
-        )
-        .is_ok_and(id)));
-
-    let (num_buffers, schedule) = graph.compile(master_id.clone());
-
-    assert!(zip(
-        zip(node_id, node_output_id),
-        zip(master_id, master_input_id),
-    )
-    .all(|((node, output), (master, input))| {
-        let process_task = Task::node(node, [], [(output, 0)]);
-        let proc_task_pos = schedule
-            .iter()
-            .position(|task| task == &process_task)
-            .unwrap();
-
-        let master_task = Task::node(master, [(input, 0)], []);
-        let master_task_pos = schedule
-            .iter()
-            .position(|task| task == &master_task)
-            .unwrap();
-
-        proc_task_pos < master_task_pos
-    }));
-
-    assert_eq!(num_buffers, 1);
-}
-
-#[test]
-fn test_adder() {
-    let mut graph = AudioGraph::default();
-
-    let mut master = Node::default();
-    let master_input_id = master.add_input();
-    let master_id = graph.insert_node(master);
-
-    let [(left_output_id, left_id), (right_output_id, right_id)] = array::from_fn(|_| {
-        let mut node = Node::default();
-        (node.add_output(), graph.insert_node(node))
+        (node_id, input_id)
     });
 
-    assert!(graph
-        .try_insert_edge(
-            (left_id.clone(), left_output_id.clone()),
-            (master_id.clone(), master_input_id.clone()),
-        )
-        .is_ok_and(id));
-    assert!(graph
-        .try_insert_edge(
-            (right_id.clone(), right_output_id.clone()),
-            (master_id.clone(), master_input_id.clone()),
-        )
-        .is_ok_and(id));
+    let mut scheduler = graph.scheduler();
 
-    let (num_buffers, schedule) = graph.compile([master_id.clone()]);
-
-    // println!("{schedule:#?}");
-
-    assert_eq!(
-        schedule,
-        [
-            Task::node(left_id, [], [(left_output_id, 0)]),
-            Task::node(right_id, [], [(right_output_id, 1)]),
-            Task::sum(1, 0, 0),
-            Task::node(master_id, [(master_input_id, 0)], []),
-        ]
-    );
-
-    assert_eq!(num_buffers, 2);
-}
-
-#[test]
-fn test_multiple_adders() {
-    let mut graph = AudioGraph::default();
-
-    let mut master = Node::default();
-    let master_input = master.add_input();
-    let master_id = graph.insert_node(master);
-
-    let nodes: [_; 3] = array::from_fn(|_i| {
-        let mut node = Node::default();
-        (node.add_output(), graph.insert_node(node))
-    });
-
-    for (node_output, node_id) in &nodes {
-        assert!(graph
-            .try_insert_edge(
-                (node_id.clone(), node_output.clone()),
-                (master_id.clone(), master_input.clone())
-            )
-            .is_ok_and(id));
+    for (id, _) in &master {
+        scheduler.add_sink_node(id);
     }
 
-    let (num_buffers, schedule) = graph.compile([master_id.clone()]);
+    let schedule = scheduler.compile();
 
-    // println!("{schedule:#?}");
-
-    let [(node_a_output_id, node_a_id), (node_b_output_id, node_b_id), (node_c_output_id, node_c_id)] =
-        nodes;
-
-    assert_eq!(
-        schedule,
-        [
-            Task::node(node_a_id, [], [(node_a_output_id, 0)]),
-            Task::node(node_c_id, [], [(node_c_output_id, 1)]),
-            Task::sum(1, 0, 0),
-            Task::node(node_b_id, [], [(node_b_output_id, 1)]),
-            Task::sum(1, 0, 0),
-            Task::node(master_id, [(master_input, 0)], []),
-        ]
-    );
-
-    assert_eq!(num_buffers, 2);
+    println!("{schedule:#?}");
 }
 
 #[test]
-fn test_m_graph() {
-    let mut graph = AudioGraph::default();
+fn adders() {
+    let mut graph = Graph::default();
+    let latencies = [6, 8, 13];
 
-    let mut master_nodes: [_; 3] = array::from_fn(|_i| Node::default());
-
-    let master_input_ids = master_nodes.each_mut().map(|node| node.add_input());
-    let master_ids = master_nodes.map(|node| graph.insert_node(node));
-
-    let [(n1_output_id, n1_id), (n2_output_id, n2_id)] = array::from_fn(|_i| {
-        let mut n1 = Node::default();
-        (n1.add_output(), graph.insert_node(n1))
+    let sources = latencies.map(|lat| {
+        let (source_id, source) = graph.insert_node();
+        (source_id, source.add_output(lat))
     });
 
-    // As an example of the above comment, it is possible to schedule this graph in a way that requires
-    // 3 buffers, because the traversal order when computing said schedule depends on the hash function.
+    let (sink_id, sink) = graph.insert_node();
+    let sink_input_id = sink.add_input();
 
-    // bad insertion order
-
-    // for (master_port, node_port) in [
-    //     (
-    //         (master_ids[0].clone(), master_input_ids[0].clone()),
-    //         (n1_id.clone(), n1_output_id.clone()),
-    //     ),
-    //     (
-    //         (master_ids[1].clone(), master_input_ids[1].clone()),
-    //         (n1_id.clone(), n1_output_id.clone()),
-    //     ),
-    //     (
-    //         (master_ids[1].clone(), master_input_ids[1].clone()),
-    //         (n2_id.clone(), n2_output_id.clone()),
-    //     ),
-    //     (
-    //         (master_ids[2].clone(), master_input_ids[2].clone()),
-    //         (n2_id.clone(), n2_output_id.clone()),
-    //     ),
-    // ] {
-    //     assert!(graph.try_insert_edge(node_port, master_port).is_ok_and(id));
-    // }
-
-    // good insertion order
-
-    for (master_port, node_port) in [
-        (
-            (master_ids[1].clone(), master_input_ids[1].clone()),
-            (n1_id.clone(), n1_output_id.clone()),
-        ),
-        (
-            (master_ids[0].clone(), master_input_ids[0].clone()),
-            (n1_id.clone(), n1_output_id.clone()),
-        ),
-        (
-            (master_ids[0].clone(), master_input_ids[0].clone()),
-            (n2_id.clone(), n2_output_id.clone()),
-        ),
-        (
-            (master_ids[2].clone(), master_input_ids[2].clone()),
-            (n2_id.clone(), n2_output_id.clone()),
-        ),
-    ] {
-        assert!(graph.try_insert_edge(node_port, master_port).is_ok_and(id));
+    for (node_id, output_id) in sources {
+        insert_success(&mut graph, (node_id, output_id), (&sink_id, &sink_input_id));
     }
 
-    let (num_buffers, schedule) = graph.compile(master_ids.clone());
+    let mut scheduler = graph.scheduler();
 
-    // println!("{schedule:#?}");
+    scheduler.add_sink_node(&sink_id);
 
-    let [master1, master2, master3] = master_ids;
-    let [master1_input, master2_input, master3_input] = master_input_ids;
+    let schedule = scheduler.compile();
 
-    // assert_eq!(
-    //     schedule,
-    //     [
-    //         Task::node(n2_id, [], [(n2_output_id, 0)]),
-    //         Task::node(n1_id, [], [(n1_output_id, 1)]),
-    //         Task::sum(1, 0, 2),
-    //         Task::node(master2, [(master2_input, 2)], []),
-    //         Task::node(master1, [(master1_input, 1)], []),
-    //         Task::node(master3, [(master3_input, 0)], []),
-    //     ],
-    // );
-
-    // assert_eq!(num_buffers, 3);
-
-    assert_eq!(
-        schedule,
-        [
-            Task::node(n1_id, [], [(n1_output_id, 0)]),
-            Task::node(master2, [(master2_input, 0)], []),
-            Task::node(n2_id, [], [(n2_output_id, 1)]),
-            Task::sum(1, 0, 0),
-            Task::node(master1, [(master1_input, 0)], []),
-            Task::node(master3, [(master3_input, 1)], []),
-        ],
-    );
-
-    assert_eq!(num_buffers, 2);
+    println!("{schedule:#?}");
 }
 
 #[test]
-fn mutiple_input_ports() {
+fn w_graph() {
+    let mut graph = Graph::default();
+
+    let (left_arm_id, left_arm) = graph.insert_node();
+    let left_hand_id = left_arm.add_input();
+    let (head_id, head) = graph.insert_node();
+    let nose_id = head.add_input();
+    let (right_arm_id, right_arm) = graph.insert_node();
+    let right_hand_id = right_arm.add_input();
+
+    let (left_leg_id, left_leg) = graph.insert_node();
+    let left_foot_id = left_leg.add_output(10);
+    let (right_leg_id, right_leg) = graph.insert_node();
+    let right_foot_id = right_leg.add_output(15);
+
+    insert_success(
+        &mut graph,
+        (left_leg_id, left_foot_id),
+        (&left_arm_id, &left_hand_id),
+    );
+    insert_success(
+        &mut graph,
+        (left_leg_id, left_foot_id),
+        (&head_id, &nose_id),
+    );
+    insert_success(
+        &mut graph,
+        (right_leg_id, right_foot_id),
+        (&head_id, &nose_id),
+    );
+    insert_success(
+        &mut graph,
+        (right_leg_id, right_foot_id),
+        (&right_arm_id, &right_hand_id),
+    );
+
+    let mut scheduler = graph.scheduler();
+
+    scheduler.add_sink_node(&left_arm_id);
+    scheduler.add_sink_node(&head_id);
+    scheduler.add_sink_node(&right_arm_id);
+
+    let schedule = scheduler.compile();
+
+    println!("{schedule:#?}");
+}
+
+#[test]
+fn multiple_input_ports() {
     const NUM_INPUT_PORTS: usize = 4;
 
-    let mut graph = AudioGraph::default();
+    let mut graph = Graph::default();
 
-    let mut master = Node::default();
-    let master_input_id = master.add_input();
-    let master_id = graph.insert_node(master);
+    let (master_id, master) = graph.insert_node();
+    let master_input_ids: [_; NUM_INPUT_PORTS] = array::from_fn(|_| master.add_input());
 
-    let mut source_node = Node::default();
-    let source_node_output_id = source_node.add_output();
-    let source_node_id = graph.insert_node(source_node);
+    let (source_id, source) = graph.insert_node();
+    let source_node_output_id = source.add_output(0);
 
-    let mut sink_node = Node::default();
-    let sink_node_input_ids: [_; NUM_INPUT_PORTS] = array::from_fn(|_i| sink_node.add_input());
-    let sink_node_output_id = sink_node.add_output();
-    let sink_node_id = graph.insert_node(sink_node);
-
-    for sink_node_input_id in &sink_node_input_ids {
-        assert!(graph
-            .try_insert_edge(
-                (source_node_id.clone(), source_node_output_id.clone()),
-                (sink_node_id.clone(), sink_node_input_id.clone())
-            )
-            .is_ok_and(id));
+    for input_id in &master_input_ids {
+        insert_success(
+            &mut graph,
+            (source_id, source_node_output_id),
+            (&master_id, input_id),
+        );
     }
 
-    assert!(graph
-        .try_insert_edge(
-            (sink_node_id.clone(), sink_node_output_id.clone()),
-            (master_id.clone(), master_input_id.clone())
-        )
-        .is_ok_and(id));
+    let mut scheduler = graph.scheduler();
 
-    let (num_buffers, schedule) = graph.compile([master_id.clone()]);
+    scheduler.add_sink_node(&master_id);
 
-    // println!("{schedule:#?}");
+    let schedule = scheduler.compile();
 
-    assert_eq!(
-        schedule,
-        [
-            Task::node(source_node_id, [], [(source_node_output_id, 0)]),
-            Task::node(
-                sink_node_id,
-                sink_node_input_ids.map(|id| (id, 0)),
-                [(sink_node_output_id, 0)]
-            ),
-            Task::node(master_id, [(master_input_id, 0)], []),
-        ]
-    );
+    println!("{schedule:#?}");
+}
 
-    assert_eq!(num_buffers, 1);
+#[test]
+fn multiple_outputs_one_input() {
+    const NUM_OUTPUT_PORTS: usize = 4;
+
+    let mut graph = Graph::default();
+
+    let (sink_id, sink) = graph.insert_node();
+    let sink_input_id = sink.add_input();
+
+    let (source_id, source) = graph.insert_node();
+    let source_output_id: [_; NUM_OUTPUT_PORTS] = array::from_fn(|_| source.add_output(0));
+
+    for output_id in source_output_id {
+        insert_success(&mut graph, (source_id, output_id), (&sink_id, &sink_input_id));
+    }
+
+    let mut scheduler = graph.scheduler();
+
+    scheduler.add_sink_node(&sink_id);
+
+    let schedule = scheduler.compile();
+
+    println!("{schedule:#?}");
 }
