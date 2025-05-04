@@ -1,15 +1,15 @@
 use super::*;
 use core::{array, convert::identity, ops::Not};
 
-// These tests aren't ideal, I have to print the compiled schedule and review it first,
-// then insert it in the final assert directive if it's correct (TODO). This is inconvenient,
-// since there are often many correct schedules, and any update to the graph's traversal order
-// (optimizations, different hashing algorithms...) will break these tests, despite still
-// creating correct schedules.
-
 fn insert_success(graph: &mut Graph, from: (NodeID, OutputID), to: (&NodeID, &InputID)) {
     assert!(graph.try_insert_edge(from, to).is_ok_and(identity))
 }
+
+// These tests aren't ideal, I have to print the compiled schedule and review it first,
+// then insert it in the final assert directive if it's correct (TODO). This is inconvenient,
+// since there are often many correct schedules, and any update to the traversal order used by the
+// scheduler (optimizations, different hashing algorithms...) will break these tests, despite
+// still creating correct schedules.
 
 #[test]
 fn basic_cycle() {
@@ -45,15 +45,14 @@ fn insert_redundant_edge() {
 }
 
 #[test]
-fn test_basic() {
+fn basic() {
     let mut graph = Graph::default();
-
-    let (master_id, master) = graph.insert_node();
-
-    let master_input_id = master.add_input();
 
     let (source_id, source) = graph.insert_node();
     let source_output_id = source.add_output(5);
+
+    let (master_id, master) = graph.insert_node();
+    let master_input_id = master.add_input();
 
     insert_success(
         &mut graph,
@@ -67,7 +66,8 @@ fn test_basic() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", schedule);
+    println!("{:#?}", scheduler.max_input_lats());
+    println!("{schedule:#?}");
 }
 
 #[test]
@@ -110,6 +110,7 @@ fn chain() {
 
     let schedule = scheduler.compile();
 
+    println!("{:#?}", scheduler.max_input_lats());
     println!("{schedule:#?}");
 }
 
@@ -141,6 +142,7 @@ fn one_output_many_input_nodes() {
 
     let schedule = scheduler.compile();
 
+    println!("{:#?}", scheduler.max_input_lats());
     println!("{schedule:#?}");
 }
 
@@ -167,6 +169,7 @@ fn adders() {
 
     let schedule = scheduler.compile();
 
+    println!("{:#?}", scheduler.max_input_lats());
     println!("{schedule:#?}");
 }
 
@@ -174,17 +177,17 @@ fn adders() {
 fn w_graph() {
     let mut graph = Graph::default();
 
+    let (left_leg_id, left_leg) = graph.insert_node();
+    let left_foot_id = left_leg.add_output(15);
+    let (right_leg_id, right_leg) = graph.insert_node();
+    let right_foot_id = right_leg.add_output(10);
+
     let (left_arm_id, left_arm) = graph.insert_node();
     let left_hand_id = left_arm.add_input();
     let (head_id, head) = graph.insert_node();
     let nose_id = head.add_input();
     let (right_arm_id, right_arm) = graph.insert_node();
     let right_hand_id = right_arm.add_input();
-
-    let (left_leg_id, left_leg) = graph.insert_node();
-    let left_foot_id = left_leg.add_output(10);
-    let (right_leg_id, right_leg) = graph.insert_node();
-    let right_foot_id = right_leg.add_output(15);
 
     insert_success(
         &mut graph,
@@ -215,6 +218,56 @@ fn w_graph() {
 
     let schedule = scheduler.compile();
 
+    println!("{:#?}", scheduler.max_input_lats());
+    println!("{schedule:#?}");
+}
+
+// basically the transpose of the w_graph
+#[test]
+fn m_graph() {
+    let mut graph = Graph::default();
+
+    let (left_arm_id, left_arm) = graph.insert_node();
+    let left_hand_id = left_arm.add_output(0);
+    let (head_id, head) = graph.insert_node();
+    let nose_id = head.add_output(0);
+    let (right_arm_id, right_arm) = graph.insert_node();
+    let right_hand_id = right_arm.add_output(0);
+    
+    let (left_leg_id, left_leg) = graph.insert_node();
+    let left_foot_id = left_leg.add_input();
+    let (right_leg_id, right_leg) = graph.insert_node();
+    let right_foot_id = right_leg.add_input();
+    
+    insert_success(
+        &mut graph,
+        (left_arm_id, left_hand_id),
+        (&left_leg_id, &left_foot_id),
+    );
+    insert_success(
+        &mut graph,
+        (head_id, nose_id),
+        (&left_leg_id, &left_foot_id),
+    );
+    insert_success(
+        &mut graph,
+        (head_id, nose_id),
+        (&right_leg_id, &right_foot_id),
+    );
+    insert_success(
+        &mut graph,
+        (right_arm_id, right_hand_id),
+        (&right_leg_id, &right_foot_id),
+    );
+
+    let mut scheduler = graph.scheduler();
+
+    scheduler.add_sink_node(&left_leg_id);
+    scheduler.add_sink_node(&right_leg_id);
+
+    let schedule = scheduler.compile();
+
+    println!("{:#?}", scheduler.max_input_lats());
     println!("{schedule:#?}");
 }
 
@@ -224,11 +277,11 @@ fn multiple_input_ports() {
 
     let mut graph = Graph::default();
 
+    let (source_id, source) = graph.insert_node();
+    let source_node_output_id = source.add_output(13);
+
     let (master_id, master) = graph.insert_node();
     let master_input_ids: [_; NUM_INPUT_PORTS] = array::from_fn(|_| master.add_input());
-
-    let (source_id, source) = graph.insert_node();
-    let source_node_output_id = source.add_output(0);
 
     for input_id in &master_input_ids {
         insert_success(
@@ -244,6 +297,7 @@ fn multiple_input_ports() {
 
     let schedule = scheduler.compile();
 
+    println!("{:#?}", scheduler.max_input_lats());
     println!("{schedule:#?}");
 }
 
@@ -253,14 +307,19 @@ fn multiple_outputs_one_input() {
 
     let mut graph = Graph::default();
 
+    let (source_id, source) = graph.insert_node();
+    let source_output_id: [_; NUM_OUTPUT_PORTS] =
+        array::from_fn(|i| source.add_output((i + 1) as u64 * 4));
+
     let (sink_id, sink) = graph.insert_node();
     let sink_input_id = sink.add_input();
 
-    let (source_id, source) = graph.insert_node();
-    let source_output_id: [_; NUM_OUTPUT_PORTS] = array::from_fn(|_| source.add_output(0));
-
     for output_id in source_output_id {
-        insert_success(&mut graph, (source_id, output_id), (&sink_id, &sink_input_id));
+        insert_success(
+            &mut graph,
+            (source_id, output_id),
+            (&sink_id, &sink_input_id),
+        );
     }
 
     let mut scheduler = graph.scheduler();
@@ -269,5 +328,6 @@ fn multiple_outputs_one_input() {
 
     let schedule = scheduler.compile();
 
+    println!("{:#?}", scheduler.max_input_lats());
     println!("{schedule:#?}");
 }

@@ -1,9 +1,12 @@
 use core::{
-    fmt::Debug,
-    hash::{BuildHasher, Hash},
+    fmt::{Debug, self},
+    hash::Hash,
     num::NonZeroU32,
     ops::{Index, IndexMut},
 };
+
+extern crate alloc;
+use alloc::rc::Rc;
 
 mod port;
 pub use port::*;
@@ -17,8 +20,9 @@ pub use scheduler::*;
 #[cfg(test)]
 mod tests;
 
-type HashMap<K, V, H = fnv::FnvBuildHasher> = std::collections::HashMap<K, V, H>;
-type HashSet<T, H = fnv::FnvBuildHasher> = std::collections::HashSet<T, H>;
+type HashMap<K, V> = std::collections::HashMap<K, V, fnv::FnvBuildHasher>;
+type HashSet<T> = std::collections::HashSet<T, fnv::FnvBuildHasher>;
+type IndexMap<K, V> = indexmap::IndexMap<K, V, fnv::FnvBuildHasher>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Graph {

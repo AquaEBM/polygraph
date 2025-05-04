@@ -5,14 +5,14 @@ use super::*;
 pub struct InputID(NonZeroU32);
 
 impl Debug for InputID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "InputID({:?})", &self.0)
     }
 }
 
 impl InputID {
     #[inline]
-    pub(crate) fn new_key<H: BuildHasher, V>(map: &HashMap<Self, V, H>) -> Self {
+    pub(crate) fn new_key(map: &HashMap<Self, impl Sized>) -> Self {
         let mut id = Self(NonZeroU32::MIN);
 
         while map.contains_key(&id) {
@@ -28,14 +28,14 @@ impl InputID {
 pub struct OutputID(NonZeroU32);
 
 impl Debug for OutputID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "OutputID({:?})", &self.0)
     }
 }
 
 impl OutputID {
     #[inline]
-    pub(crate) fn new_key<H: BuildHasher, V>(map: &HashMap<Self, V, H>) -> Self {
+    pub(crate) fn new_key(map: &HashMap<Self, impl Sized>) -> Self {
         let mut id = Self(NonZeroU32::MIN);
 
         while map.contains_key(&id) {
@@ -51,14 +51,14 @@ impl OutputID {
 pub struct NodeID(NonZeroU32);
 
 impl Debug for NodeID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "NodeID({:?})", &self.0)
     }
 }
 
 impl NodeID {
     #[inline]
-    pub(crate) fn new_key<H: BuildHasher, V>(map: &HashMap<Self, V, H>) -> Self {
+    pub(crate) fn new_key(map: &HashMap<Self, impl Sized>) -> Self {
         let mut id = Self(NonZeroU32::MIN);
 
         while map.contains_key(&id) {
@@ -73,8 +73,8 @@ impl NodeID {
 pub struct Port<P = OutputID>(HashMap<NodeID, HashSet<P>>);
 
 impl<P: Debug> Debug for Port<P> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Port({:?})", &self.0)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", &self.0)
     }
 }
 

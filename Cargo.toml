@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 
 fnv = "1"
+indexmap = "2"
