@@ -1,5 +1,5 @@
 use core::{
-    fmt::{Debug, self},
+    fmt::{self, Debug},
     hash::Hash,
     num::NonZeroU32,
     ops::{Index, IndexMut},

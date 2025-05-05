@@ -66,7 +66,7 @@ fn basic() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.max_input_lats());
+    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -110,7 +110,7 @@ fn chain() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.max_input_lats());
+    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -142,7 +142,7 @@ fn one_output_many_input_nodes() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.max_input_lats());
+    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -169,7 +169,7 @@ fn adders() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.max_input_lats());
+    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -218,7 +218,7 @@ fn w_graph() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.max_input_lats());
+    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -233,12 +233,12 @@ fn m_graph() {
     let nose_id = head.add_output(0);
     let (right_arm_id, right_arm) = graph.insert_node();
     let right_hand_id = right_arm.add_output(0);
-    
+
     let (left_leg_id, left_leg) = graph.insert_node();
     let left_foot_id = left_leg.add_input();
     let (right_leg_id, right_leg) = graph.insert_node();
     let right_foot_id = right_leg.add_input();
-    
+
     insert_success(
         &mut graph,
         (left_arm_id, left_hand_id),
@@ -267,7 +267,7 @@ fn m_graph() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.max_input_lats());
+    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -297,7 +297,7 @@ fn multiple_input_ports() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.max_input_lats());
+    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -328,6 +328,6 @@ fn multiple_outputs_one_input() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.max_input_lats());
+    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }

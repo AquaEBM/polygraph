@@ -114,13 +114,12 @@ impl BufferAllocator {
 #[derive(Debug, Clone)]
 pub struct Scheduler<'a> {
     graph: &'a Graph,
-    intermediate: HashMap<NodeID, HashMap<OutputID, Port<InputID>>>,
-    max_input_lats: IndexMap<NodeID, u64>,
+    intermediate: IndexMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)>,
 }
 
 impl<'a> Scheduler<'a> {
-    pub fn max_input_lats(&self) -> &IndexMap<NodeID, u64> {
-        &self.max_input_lats
+    pub fn intermediate(&self) -> &IndexMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)> {
+        &self.intermediate
     }
 }
 
@@ -136,25 +135,22 @@ impl<'a> Scheduler<'a> {
         Self {
             graph,
             intermediate: Default::default(),
-            max_input_lats: Default::default(),
         }
     }
 
     pub fn add_sink_node(&mut self, index: &NodeID) {
-        if self.max_input_lats.contains_key(index) {
+        if self.intermediate.contains_key(index) {
             return;
         }
-
-        self.intermediate.entry(*index).or_default();
 
         let mut max_input_lat = 0;
 
         for (dest_port_id, dest_port) in self.graph[index].input_ports() {
             for (source_node_id, source_port_ids) in dest_port.connections() {
                 self.add_sink_node(source_node_id);
-                let source_node_input_lat = &self.max_input_lats[source_node_id];
 
-                let source_node_outputs = self.intermediate.entry(*source_node_id).or_default();
+                let (source_node_input_lat, source_node_outputs) =
+                    &mut self.intermediate[source_node_id];
 
                 for source_port_id in source_port_ids {
                     source_node_outputs
@@ -164,14 +160,17 @@ impl<'a> Scheduler<'a> {
 
                     let source_port_lat =
                         self.graph[source_node_id].output_latencies()[source_port_id];
-                    let source_port_total_lat = source_node_input_lat + source_port_lat;
+                    let source_port_total_lat = *source_node_input_lat + source_port_lat;
 
                     max_input_lat = max_input_lat.max(source_port_total_lat);
                 }
             }
         }
 
-        assert!(self.max_input_lats.insert(*index, max_input_lat).is_none());
+        assert!(self
+            .intermediate
+            .insert(*index, (max_input_lat, HashMap::default()))
+            .is_none());
     }
 
     pub fn compile(&self) -> GraphSchedule {
@@ -184,12 +183,10 @@ impl<'a> Scheduler<'a> {
         let Self {
             graph,
             intermediate,
-            max_input_lats,
         } = self;
 
-        for (&node_id, max_input_lat) in max_input_lats {
-            let current_node = &graph[&node_id];
-            let node_output_lats = current_node.output_latencies();
+        for (&node_id, (max_input_lat, node_outputs)) in intermediate {
+            let node_output_lats = graph[&node_id].output_latencies();
 
             let mut inputs = HashMap::default();
             let mut outputs = IndexMap::default();
@@ -198,7 +195,7 @@ impl<'a> Scheduler<'a> {
 
             // for every (actually used) output of this node
 
-            for (&source_port_id, source_port) in intermediate[&node_id].iter() {
+            for (&source_port_id, source_port) in node_outputs {
                 let connections = source_port.connections();
                 if connections.is_empty() {
                     continue;
@@ -216,7 +213,7 @@ impl<'a> Scheduler<'a> {
                     let mut prev_assigned_ports = HashMap::default();
 
                     // find the maximum delay it will be subjected to
-                    let delay = max_input_lats[&dest_node_id] - source_total_lat;
+                    let delay = intermediate[&dest_node_id].0 - source_total_lat;
                     max_delay = max_delay.max(delay);
 
                     // assign the buffer to all recieveing ports, and keep track of ports
@@ -261,7 +258,6 @@ impl<'a> Scheduler<'a> {
 
             // handle repeat assignments
             for (port_id, repeat_assignees) in repeat_assignees {
-
                 let mut sum_tasks = vec![];
 
                 for (dest_node_id, repeat_assignees) in repeat_assignees {
@@ -320,14 +316,7 @@ impl<'a> Scheduler<'a> {
                 insert_new(&mut inputs, dest_port_id, source);
             }
 
-            insert_new(
-                &mut tasks,
-                node_id,
-                ScheduleEntry {
-                    inputs,
-                    outputs,
-                },
-            )
+            insert_new(&mut tasks, node_id, ScheduleEntry { inputs, outputs })
         }
 
         GraphSchedule {
