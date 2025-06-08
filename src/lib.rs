@@ -17,6 +17,8 @@ pub use node::*;
 pub mod scheduler;
 pub use scheduler::*;
 
+pub use indexmap;
+
 #[cfg(test)]
 mod tests;
 
@@ -110,7 +112,7 @@ impl Graph {
     }
 
     #[inline]
-    pub fn scheduler(&self) -> Scheduler {
+    pub fn scheduler(&self) -> Scheduler<'_> {
         Scheduler::for_graph(self)
     }
 }

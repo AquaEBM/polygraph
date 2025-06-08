@@ -6,6 +6,7 @@ pub struct InputID(NonZeroU32);
 
 impl Debug for InputID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // to override pretty-print
         write!(f, "InputID({:?})", &self.0)
     }
 }
@@ -29,6 +30,7 @@ pub struct OutputID(NonZeroU32);
 
 impl Debug for OutputID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // to override pretty-print
         write!(f, "OutputID({:?})", &self.0)
     }
 }
@@ -52,6 +54,7 @@ pub struct NodeID(NonZeroU32);
 
 impl Debug for NodeID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // to override pretty-print
         write!(f, "NodeID({:?})", &self.0)
     }
 }

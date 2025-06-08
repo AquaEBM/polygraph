@@ -15,6 +15,7 @@ pub struct BufferID(NonZeroU32);
 
 impl Debug for BufferID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // to override pretty-print
         write!(f, "BufferID({:?})", &self.0)
     }
 }
