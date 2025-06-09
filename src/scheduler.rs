@@ -127,7 +127,7 @@ impl<'a> Scheduler<'a> {
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GraphSchedule {
     pub num_buffers: usize,
-    pub tasks: HashMap<NodeID, ScheduleEntry>,
+    pub tasks: IndexMap<NodeID, ScheduleEntry>,
 }
 
 impl<'a> Scheduler<'a> {
@@ -179,7 +179,7 @@ impl<'a> Scheduler<'a> {
 
         let mut claims = HashMap::<_, HashMap<_, _>>::default();
 
-        let mut tasks = HashMap::default();
+        let mut tasks = IndexMap::default();
 
         let Self {
             graph,
@@ -317,7 +317,7 @@ impl<'a> Scheduler<'a> {
                 insert_new(&mut inputs, dest_port_id, source);
             }
 
-            insert_new(&mut tasks, node_id, ScheduleEntry { inputs, outputs })
+            assert!(tasks.insert(node_id, ScheduleEntry { inputs, outputs }).is_none());
         }
 
         GraphSchedule {
