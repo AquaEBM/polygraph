@@ -9,30 +9,6 @@ fn insert_new<K: Hash + Eq, V>(map: &mut HashMap<K, V>, k: K, v: V) {
     assert!(map.insert(k, v).is_none())
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
-#[repr(transparent)]
-pub struct BufferID(NonZeroU32);
-
-impl Debug for BufferID {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // to override pretty-print
-        write!(f, "BufferID({:?})", &self.0)
-    }
-}
-
-impl BufferID {
-    #[inline]
-    pub(crate) fn new_key(map: &HashMap<Self, impl Sized>) -> Self {
-        let mut id = Self(NonZeroU32::MIN);
-
-        while map.contains_key(&id) {
-            id.0 = id.0.checked_add(1).expect("Index overflow");
-        }
-
-        id
-    }
-}
-
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum SourceType {
     Direct { delay: u64 },
@@ -68,12 +44,12 @@ impl InputBufferAssignment {
 pub struct SumTask {
     rhs_delay: u64,
     lhs: InputBufferAssignment,
-    output: BufferID,
+    output: u32,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct OutputBufferAssignment<T = u64> {
-    id: BufferID,
+    id: u32,
     max_delay: T,
     sum_tasks: Box<[SumTask]>,
 }
@@ -86,7 +62,7 @@ pub struct ScheduleEntry<T = u64> {
 
 #[derive(Debug, Default)]
 pub(crate) struct BufferAllocator {
-    ids: HashMap<BufferID, Rc<()>>,
+    ids: Vec<Rc<()>>,
 }
 
 impl BufferAllocator {
@@ -96,19 +72,23 @@ impl BufferAllocator {
     }
 
     #[inline]
-    fn find_free_buffer(&mut self) -> (&BufferID, &Rc<()>) {
-        let key = self
-            .ids
+    fn find_free_buffer(&mut self) -> (u32, &Rc<()>) {
+        let id = self.ids
             .iter()
+            .enumerate()
             .find(|(_, claims)| Rc::strong_count(claims) == 1)
-            .map(|(&id, _)| id)
+            .map(|(id, _)| id as u32)
             .unwrap_or_else(|| {
-                let new_key = BufferID::new_key(&self.ids);
-                insert_new(&mut self.ids, new_key, Default::default());
-                new_key
+                let new_id: u32 = self
+                    .ids
+                    .len()
+                    .try_into()
+                    .expect("more than u32::MAX buffers, aborting");
+                self.ids.push(Default::default());
+                new_id
             });
 
-        self.ids.get_key_value(&key).unwrap()
+        (id, &self.ids[id as usize])
     }
 }
 
@@ -168,10 +148,11 @@ impl<'a> Scheduler<'a> {
             }
         }
 
-        assert!(self
-            .intermediate
-            .insert(*index, (max_input_lat, HashMap::default()))
-            .is_none());
+        assert!(
+            self.intermediate
+                .insert(*index, (max_input_lat, HashMap::default()))
+                .is_none()
+        );
     }
 
     pub fn compile_map_delays<T>(&self, mut f: impl FnMut(u64) -> T) -> GraphSchedule<T> {
@@ -203,7 +184,7 @@ impl<'a> Scheduler<'a> {
                 }
 
                 // allocate a buffer for it
-                let (&id, handle_ref) = allocator.find_free_buffer();
+                let (id, handle_ref) = allocator.find_free_buffer();
 
                 let source_total_lat = max_input_lat + node_output_lats[&source_port_id];
                 let mut max_delay = 0;
@@ -280,23 +261,25 @@ impl<'a> Scheduler<'a> {
                             drop(this_old_handle);
                         }
 
-                        let (&output, new_handle_ref) = allocator.find_free_buffer();
+                        let (output, new_handle_ref) = allocator.find_free_buffer();
 
-                        assert!(dest_node_claims
-                            .insert(
-                                dest_port_id,
-                                (
-                                    Rc::clone(new_handle_ref),
-                                    InputBufferAssignment {
-                                        node: node_id,
-                                        port: port_id,
-                                        kind: SourceType::Sum {
-                                            index: sum_tasks.len(),
+                        assert!(
+                            dest_node_claims
+                                .insert(
+                                    dest_port_id,
+                                    (
+                                        Rc::clone(new_handle_ref),
+                                        InputBufferAssignment {
+                                            node: node_id,
+                                            port: port_id,
+                                            kind: SourceType::Sum {
+                                                index: sum_tasks.len(),
+                                            },
                                         },
-                                    },
-                                ),
-                            )
-                            .is_none());
+                                    ),
+                                )
+                                .is_none()
+                        );
 
                         sum_tasks.push(SumTask {
                             rhs_delay: delay,
@@ -317,7 +300,11 @@ impl<'a> Scheduler<'a> {
                 insert_new(&mut inputs, dest_port_id, source);
             }
 
-            assert!(tasks.insert(node_id, ScheduleEntry { inputs, outputs }).is_none());
+            assert!(
+                tasks
+                    .insert(node_id, ScheduleEntry { inputs, outputs })
+                    .is_none()
+            );
         }
 
         GraphSchedule {
