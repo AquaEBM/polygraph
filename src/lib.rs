@@ -3,6 +3,7 @@ use core::{
     hash::Hash,
     num::NonZeroU32,
     ops::{Index, IndexMut},
+    convert,
 };
 
 extern crate alloc;

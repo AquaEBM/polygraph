@@ -1,8 +1,8 @@
 use super::*;
-use core::{array, convert::identity, ops::Not};
+use core::{array, ops::Not};
 
 fn insert_success(graph: &mut Graph, from: (NodeID, OutputID), to: (&NodeID, &InputID)) {
-    assert!(graph.try_insert_edge(from, to).is_ok_and(identity))
+    assert!(graph.try_insert_edge(from, to).is_ok_and(convert::identity))
 }
 
 // These tests aren't ideal, I have to print the compiled schedule and review it first,
@@ -21,7 +21,7 @@ fn basic_cycle() {
 
     assert!(graph
         .try_insert_edge((node1_id, node1_output_id), (&node1_id, &node1_input_id))
-        .is_err_and(identity))
+        .is_err_and(convert::identity))
 }
 
 #[test]

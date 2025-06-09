@@ -72,16 +72,16 @@ pub struct SumTask {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct OutputBufferAssignment {
+pub struct OutputBufferAssignment<T = u64> {
     id: BufferID,
-    max_delay: u64,
+    max_delay: T,
     sum_tasks: Box<[SumTask]>,
 }
 
 #[derive(PartialEq, Eq, Clone, Default, Debug)]
-pub struct ScheduleEntry {
+pub struct ScheduleEntry<T = u64> {
     inputs: HashMap<InputID, InputBufferAssignment>,
-    outputs: IndexMap<OutputID, OutputBufferAssignment>,
+    outputs: IndexMap<OutputID, OutputBufferAssignment<T>>,
 }
 
 #[derive(Debug, Default)]
@@ -125,9 +125,9 @@ impl<'a> Scheduler<'a> {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct GraphSchedule {
+pub struct GraphSchedule<T = u64> {
     pub num_buffers: usize,
-    pub tasks: IndexMap<NodeID, ScheduleEntry>,
+    pub tasks: IndexMap<NodeID, ScheduleEntry<T>>,
 }
 
 impl<'a> Scheduler<'a> {
@@ -174,7 +174,7 @@ impl<'a> Scheduler<'a> {
             .is_none());
     }
 
-    pub fn compile(&self) -> GraphSchedule {
+    pub fn compile_map_delays<T>(&self, mut f: impl FnMut(u64) -> T) -> GraphSchedule<T> {
         let mut allocator = BufferAllocator::default();
 
         let mut claims = HashMap::<_, HashMap<_, _>>::default();
@@ -251,7 +251,7 @@ impl<'a> Scheduler<'a> {
                     source_port_id,
                     OutputBufferAssignment {
                         id,
-                        max_delay,
+                        max_delay: f(max_delay),
                         sum_tasks: Box::new([]),
                     },
                 );
@@ -324,5 +324,9 @@ impl<'a> Scheduler<'a> {
             num_buffers: allocator.len(),
             tasks,
         }
+    }
+
+    pub fn compile(&self) -> GraphSchedule {
+        self.compile_map_delays(convert::identity)
     }
 }
