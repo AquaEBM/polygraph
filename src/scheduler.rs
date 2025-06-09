@@ -26,13 +26,13 @@ impl Debug for SourceType {
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct InputBufferAssignment {
-    node: NodeID,
-    port: OutputID,
-    kind: SourceType,
+    pub node: NodeID,
+    pub port: OutputID,
+    pub kind: SourceType,
 }
 
 impl InputBufferAssignment {
-    fn incoming_delay(&self) -> u64 {
+    pub fn incoming_delay(&self) -> u64 {
         match &self.kind {
             SourceType::Direct { delay } => *delay,
             _ => 0,
@@ -42,9 +42,9 @@ impl InputBufferAssignment {
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct SumTask {
-    rhs_delay: u64,
-    lhs: InputBufferAssignment,
-    output: u32,
+    pub rhs_delay: u64,
+    pub lhs: InputBufferAssignment,
+    pub output: u32,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -55,9 +55,9 @@ pub struct OutputBufferAssignment<T = u64> {
 }
 
 #[derive(PartialEq, Eq, Clone, Default, Debug)]
-pub struct ScheduleEntry<T = u64> {
+pub struct NodeIO<T = u64> {
     inputs: HashMap<InputID, InputBufferAssignment>,
-    outputs: IndexMap<OutputID, OutputBufferAssignment<T>>,
+    outputs: HashMap<OutputID, OutputBufferAssignment<T>>,
 }
 
 #[derive(Debug, Default)]
@@ -104,10 +104,22 @@ impl<'a> Scheduler<'a> {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub enum Task {
+    Sum {
+        node_id: NodeID,
+        port_id: OutputID,
+        index: usize,
+    },
+    Node(NodeID),
+}
+
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct GraphSchedule<T = u64> {
     pub num_buffers: usize,
-    pub tasks: IndexMap<NodeID, ScheduleEntry<T>>,
+    pub node_io: HashMap<NodeID, NodeIO<T>>,
+    pub intermediate: IndexMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)>,
+    pub tasks: Box<[Task]>,
 }
 
 impl<'a> Scheduler<'a> {
@@ -155,23 +167,28 @@ impl<'a> Scheduler<'a> {
         );
     }
 
-    pub fn compile_map_delays<T>(&self, mut f: impl FnMut(u64) -> T) -> GraphSchedule<T> {
+    pub fn compile_map_delays<T>(self, mut f: impl FnMut(u64) -> T) -> GraphSchedule<T> {
         let mut allocator = BufferAllocator::default();
 
         let mut claims = HashMap::<_, HashMap<_, _>>::default();
 
-        let mut tasks = IndexMap::default();
+        let mut node_io = HashMap::default();
+
+        let mut tasks = vec![];
 
         let Self {
             graph,
             intermediate,
         } = self;
 
-        for (&node_id, (max_input_lat, node_outputs)) in intermediate {
+        for (&node_id, (max_input_lat, node_outputs)) in &intermediate {
+
+            tasks.push(Task::Node(node_id));
+
             let node_output_lats = graph[&node_id].output_latencies();
 
             let mut inputs = HashMap::default();
-            let mut outputs = IndexMap::default();
+            let mut outputs = HashMap::default();
 
             let mut repeat_assignees = HashMap::default();
 
@@ -263,6 +280,8 @@ impl<'a> Scheduler<'a> {
 
                         let (output, new_handle_ref) = allocator.find_free_buffer();
 
+                        let index = sum_tasks.len();
+
                         assert!(
                             dest_node_claims
                                 .insert(
@@ -272,14 +291,14 @@ impl<'a> Scheduler<'a> {
                                         InputBufferAssignment {
                                             node: node_id,
                                             port: port_id,
-                                            kind: SourceType::Sum {
-                                                index: sum_tasks.len(),
-                                            },
+                                            kind: SourceType::Sum { index },
                                         },
                                     ),
                                 )
                                 .is_none()
                         );
+
+                        tasks.push(Task::Sum { node_id, port_id, index });
 
                         sum_tasks.push(SumTask {
                             rhs_delay: delay,
@@ -301,19 +320,21 @@ impl<'a> Scheduler<'a> {
             }
 
             assert!(
-                tasks
-                    .insert(node_id, ScheduleEntry { inputs, outputs })
+                node_io
+                    .insert(node_id, NodeIO { inputs, outputs })
                     .is_none()
             );
         }
 
         GraphSchedule {
             num_buffers: allocator.len(),
-            tasks,
+            node_io,
+            intermediate,
+            tasks: tasks.into_boxed_slice(),
         }
     }
 
-    pub fn compile(&self) -> GraphSchedule {
+    pub fn compile(self) -> GraphSchedule {
         self.compile_map_delays(convert::identity)
     }
 }

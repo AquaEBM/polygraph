@@ -66,7 +66,6 @@ fn basic() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -110,7 +109,6 @@ fn chain() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -142,7 +140,6 @@ fn one_output_many_input_nodes() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -169,7 +166,6 @@ fn adders() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -218,7 +214,6 @@ fn w_graph() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -267,7 +262,6 @@ fn m_graph() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -297,7 +291,6 @@ fn multiple_input_ports() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
 
@@ -328,6 +321,5 @@ fn multiple_outputs_one_input() {
 
     let schedule = scheduler.compile();
 
-    println!("{:#?}", scheduler.intermediate());
     println!("{schedule:#?}");
 }
