@@ -73,7 +73,8 @@ impl BufferAllocator {
 
     #[inline]
     fn find_free_buffer(&mut self) -> (u32, &Rc<()>) {
-        let id = self.ids
+        let id = self
+            .ids
             .iter()
             .enumerate()
             .find(|(_, claims)| Rc::strong_count(claims) == 1)
@@ -95,12 +96,17 @@ impl BufferAllocator {
 #[derive(Debug, Clone)]
 pub struct Scheduler<'a> {
     graph: &'a Graph,
-    intermediate: IndexMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)>,
+    order: Vec<NodeID>,
+    intermediate: HashMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)>,
 }
 
 impl<'a> Scheduler<'a> {
-    pub fn intermediate(&self) -> &IndexMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)> {
+    pub fn intermediate(&self) -> &HashMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)> {
         &self.intermediate
+    }
+
+    pub fn order(&self) -> &[NodeID] {
+        &self.order
     }
 }
 
@@ -118,7 +124,7 @@ pub enum Task {
 pub struct GraphSchedule<T = u64> {
     pub num_buffers: usize,
     pub node_io: HashMap<NodeID, NodeIO<T>>,
-    pub intermediate: IndexMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)>,
+    pub intermediate: HashMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)>,
     pub tasks: Box<[Task]>,
 }
 
@@ -128,6 +134,7 @@ impl<'a> Scheduler<'a> {
         Self {
             graph,
             intermediate: Default::default(),
+            order: Default::default(),
         }
     }
 
@@ -143,7 +150,7 @@ impl<'a> Scheduler<'a> {
                 self.add_sink_node(source_node_id);
 
                 let (source_node_input_lat, source_node_outputs) =
-                    &mut self.intermediate[source_node_id];
+                    &mut self.intermediate.get_mut(source_node_id).unwrap();
 
                 for source_port_id in source_port_ids {
                     source_node_outputs
@@ -179,9 +186,11 @@ impl<'a> Scheduler<'a> {
         let Self {
             graph,
             intermediate,
+            order,
         } = self;
 
-        for (&node_id, (max_input_lat, node_outputs)) in &intermediate {
+        for id in &order {
+            let (&node_id, (max_input_lat, node_outputs)) = intermediate.get_key_value(id).unwrap();
 
             tasks.push(Task::Node(node_id));
 
@@ -298,7 +307,11 @@ impl<'a> Scheduler<'a> {
                                 .is_none()
                         );
 
-                        tasks.push(Task::Sum { node_id, port_id, index });
+                        tasks.push(Task::Sum {
+                            node_id,
+                            port_id,
+                            index,
+                        });
 
                         sum_tasks.push(SumTask {
                             rhs_delay: delay,

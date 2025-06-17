@@ -19,9 +19,11 @@ fn basic_cycle() {
     let node1_input_id = node1.add_input();
     let node1_output_id = node1.add_output(0);
 
-    assert!(graph
-        .try_insert_edge((node1_id, node1_output_id), (&node1_id, &node1_input_id))
-        .is_err_and(convert::identity))
+    assert!(
+        graph
+            .try_insert_edge((node1_id, node1_output_id), (&node1_id, &node1_input_id))
+            .is_err_and(convert::identity)
+    )
 }
 
 #[test]
@@ -39,9 +41,11 @@ fn insert_redundant_edge() {
         (node1_id, node1_output),
         (&node2_id, &node2_input),
     );
-    assert!(graph
-        .try_insert_edge((node1_id, node1_output), (&node2_id, &node2_input))
-        .is_ok_and(Not::not));
+    assert!(
+        graph
+            .try_insert_edge((node1_id, node1_output), (&node2_id, &node2_input))
+            .is_ok_and(Not::not)
+    );
 }
 
 #[test]
