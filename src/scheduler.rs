@@ -58,8 +58,8 @@ pub struct OutputBufferAssignment<T = u64> {
 
 #[derive(PartialEq, Eq, Clone, Default, Debug)]
 pub struct NodeIO<T = u64> {
-    inputs: HashMap<InputID, InputBufferAssignment>,
-    outputs: HashMap<OutputID, OutputBufferAssignment<T>>,
+    pub inputs: HashMap<InputID, InputBufferAssignment>,
+    pub outputs: HashMap<OutputID, OutputBufferAssignment<T>>,
 }
 
 #[derive(Debug, Default)]
