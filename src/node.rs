@@ -42,6 +42,7 @@ impl IndexMut<&OutputID> for Node {
 
 impl Node {
     #[inline]
+    #[must_use]
     pub fn input_ports(&self) -> &HashMap<InputID, Port> {
         &self.ports
     }
@@ -65,6 +66,7 @@ impl Node {
     }
 
     #[inline]
+    #[must_use]
     pub fn output_latencies(&self) -> &HashMap<OutputID, u64> {
         &self.latencies
     }

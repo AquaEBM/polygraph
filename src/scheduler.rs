@@ -6,7 +6,7 @@ use super::*;
 ///
 /// if `map.contains_key(&k)`
 fn insert_new<K: Hash + Eq, V>(map: &mut HashMap<K, V>, k: K, v: V) {
-    assert!(map.insert(k, v).is_none())
+    assert!(map.insert(k, v).is_none());
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -32,10 +32,12 @@ pub struct InputBufferAssignment {
 }
 
 impl InputBufferAssignment {
+    #[inline]
+    #[must_use]
     pub fn incoming_delay(&self) -> u64 {
         match &self.kind {
             SourceType::Direct { delay } => *delay,
-            _ => 0,
+            SourceType::Sum { .. } => 0,
         }
     }
 }
@@ -78,18 +80,17 @@ impl BufferAllocator {
             .iter()
             .enumerate()
             .find(|(_, claims)| Rc::strong_count(claims) == 1)
-            .map(|(id, _)| id as u32)
+            .map(|(id, _)| id)
             .unwrap_or_else(|| {
-                let new_id: u32 = self
-                    .ids
-                    .len()
-                    .try_into()
-                    .expect("more than u32::MAX buffers, aborting");
-                self.ids.push(Default::default());
+                let new_id = self.ids.len();
+                self.ids.push(Rc::new(()));
                 new_id
             });
 
-        (id, &self.ids[id as usize])
+        (
+            u32::try_from(id).expect("more than u32::MAX buffers, aborting"),
+            &self.ids[id],
+        )
     }
 }
 
@@ -100,11 +101,13 @@ pub struct Scheduler<'a> {
     intermediate: HashMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)>,
 }
 
-impl<'a> Scheduler<'a> {
+impl Scheduler<'_> {
+    #[must_use]
     pub fn intermediate(&self) -> &HashMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)> {
         &self.intermediate
     }
 
+    #[must_use]
     pub fn order(&self) -> &[NodeID] {
         &self.order
     }
@@ -133,8 +136,8 @@ impl<'a> Scheduler<'a> {
     pub(crate) fn for_graph(graph: &'a Graph) -> Self {
         Self {
             graph,
-            intermediate: Default::default(),
-            order: Default::default(),
+            intermediate: HashMap::default(),
+            order: Vec::new(),
         }
     }
 
@@ -150,7 +153,7 @@ impl<'a> Scheduler<'a> {
                 self.add_sink_node(source_node_id);
 
                 let (source_node_input_lat, source_node_outputs) =
-                    &mut self.intermediate.get_mut(source_node_id).unwrap();
+                    self.intermediate.get_mut(source_node_id).unwrap();
 
                 for source_port_id in source_port_ids {
                     source_node_outputs

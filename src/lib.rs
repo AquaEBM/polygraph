@@ -91,6 +91,7 @@ impl Graph {
     }
 
     #[inline]
+    #[must_use]
     pub fn get_node(&self, index: &NodeID) -> Option<&Node> {
         self.nodes.get(index)
     }
@@ -110,6 +111,7 @@ impl Graph {
     }
 
     #[inline]
+    #[must_use]
     pub fn scheduler(&self) -> Scheduler<'_> {
         Scheduler::for_graph(self)
     }

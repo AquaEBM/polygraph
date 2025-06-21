@@ -87,7 +87,7 @@ impl<P: Hash + Eq> PartialEq for Port<P> {
 
 impl<P> Default for Port<P> {
     fn default() -> Self {
-        Self(Default::default())
+        Self(HashMap::default())
     }
 }
 
@@ -95,6 +95,7 @@ impl<P: Hash + Eq> Eq for Port<P> {}
 
 impl<P> Port<P> {
     #[inline]
+    #[must_use]
     pub fn connections(&self) -> &HashMap<NodeID, HashSet<P>> {
         &self.0
     }
@@ -107,6 +108,7 @@ impl<P> Port<P> {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
