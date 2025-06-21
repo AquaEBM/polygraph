@@ -51,9 +51,9 @@ pub struct SumTask {
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct OutputBufferAssignment<T = u64> {
-    id: u32,
-    max_delay: T,
-    sum_tasks: Box<[SumTask]>,
+    pub id: u32,
+    pub max_delay: T,
+    pub sum_tasks: Box<[SumTask]>,
 }
 
 #[derive(PartialEq, Eq, Clone, Default, Debug)]
