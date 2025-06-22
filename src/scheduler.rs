@@ -9,19 +9,10 @@ fn insert_new<K: Hash + Eq, V>(map: &mut HashMap<K, V>, k: K, v: V) {
     assert!(map.insert(k, v).is_none());
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SourceType {
     Direct { delay: u64 },
     Sum { index: usize },
-}
-
-impl Debug for SourceType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Direct { delay } => write!(f, "Direct {{ delay: {delay:?} }}"),
-            Self::Sum { index } => write!(f, "Sum {{ index: {index:?} }}"),
-        }
-    }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]

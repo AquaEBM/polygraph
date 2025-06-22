@@ -4,9 +4,9 @@ use super::*;
 #[repr(transparent)]
 pub struct InputID(NonZeroU32);
 
-impl Debug for InputID {
+impl fmt::Debug for InputID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", &self.0)
+        fmt::Debug::fmt(&self.0, f)
     }
 }
 
@@ -27,9 +27,9 @@ impl InputID {
 #[repr(transparent)]
 pub struct OutputID(NonZeroU32);
 
-impl Debug for OutputID {
+impl fmt::Debug for OutputID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", &self.0)
+        fmt::Debug::fmt(&self.0, f)
     }
 }
 
@@ -50,10 +50,9 @@ impl OutputID {
 #[repr(transparent)]
 pub struct NodeID(NonZeroU32);
 
-impl Debug for NodeID {
+impl fmt::Debug for NodeID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // to override pretty-print
-        write!(f, "{:?}", &self.0)
+        fmt::Debug::fmt(&self.0, f)
     }
 }
 
@@ -73,9 +72,9 @@ impl NodeID {
 #[derive(Clone)]
 pub struct Port<P = OutputID>(HashMap<NodeID, HashSet<P>>);
 
-impl<P: Debug> Debug for Port<P> {
+impl<P: fmt::Debug> fmt::Debug for Port<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", &self.0)
+        fmt::Debug::fmt(&self.0, f)
     }
 }
 

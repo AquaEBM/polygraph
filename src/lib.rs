@@ -1,6 +1,6 @@
 use core::{
     convert,
-    fmt::{self, Debug},
+    fmt,
     hash::Hash,
     num::NonZeroU32,
     ops::{Index, IndexMut},
