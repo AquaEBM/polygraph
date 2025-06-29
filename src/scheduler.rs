@@ -9,48 +9,65 @@ fn insert_new<K: Hash + Eq, V>(map: &mut HashMap<K, V>, k: K, v: V) {
     assert!(map.insert(k, v).is_none());
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum SourceType {
     Direct { delay: u64 },
     Sum { index: usize },
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub struct InputBufferAssignment {
-    pub node: NodeID,
-    pub port: OutputID,
-    pub kind: SourceType,
-}
-
-impl InputBufferAssignment {
+impl SourceType {
     #[inline]
     #[must_use]
-    pub fn incoming_delay(&self) -> u64 {
-        match &self.kind {
+    pub fn delay(&self) -> u64 {
+        match &self {
             SourceType::Direct { delay } => *delay,
             SourceType::Sum { .. } => 0,
         }
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub struct SumTask {
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Source<N, O> {
+    pub node: N,
+    pub port: O,
+    pub kind: SourceType,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SumTask<N, O> {
     pub rhs_delay: u64,
-    pub lhs: InputBufferAssignment,
+    pub lhs: Source<N, O>,
     pub output: u32,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub struct OutputBufferAssignment<T = u64> {
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Sink<N, O> {
     pub id: u32,
-    pub max_delay: T,
-    pub sum_tasks: Box<[SumTask]>,
+    pub max_delay: u64,
+    pub sum_tasks: Box<[SumTask<N, O>]>,
 }
 
-#[derive(PartialEq, Eq, Clone, Default, Debug)]
-pub struct NodeIO<T = u64> {
-    pub inputs: HashMap<InputID, InputBufferAssignment>,
-    pub outputs: HashMap<OutputID, OutputBufferAssignment<T>>,
+#[derive(Clone, Debug)]
+pub struct NodeIO<N, I, O> {
+    pub inputs: HashMap<I, Source<N, O>>,
+    pub outputs: HashMap<O, Sink<N, O>>,
+}
+
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> PartialEq for NodeIO<N, I, O> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inputs == other.inputs && self.outputs == other.outputs
+    }
+}
+
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> Eq for NodeIO<N, I, O> {}
+
+impl<N, I, O> Default for NodeIO<N, I, O> {
+    fn default() -> Self {
+        Self {
+            inputs: HashMap::default(),
+            outputs: HashMap::default(),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -60,8 +77,11 @@ pub(crate) struct BufferAllocator {
 
 impl BufferAllocator {
     #[inline]
-    pub(crate) fn len(&self) -> usize {
-        self.ids.len()
+    pub(crate) fn len(&self) -> u32 {
+        self.ids
+            .len()
+            .try_into()
+            .expect("more than u32::MAX buffers, aborting")
     }
 
     #[inline]
@@ -71,89 +91,144 @@ impl BufferAllocator {
             .iter()
             .enumerate()
             .find(|(_, claims)| Rc::strong_count(claims) == 1)
-            .map(|(id, _)| id)
+            .map(|(id, _)| id as u32)
             .unwrap_or_else(|| {
-                let new_id = self.ids.len();
+                let new_id = self.len();
                 self.ids.push(Rc::new(()));
                 new_id
             });
 
-        (
-            u32::try_from(id).expect("more than u32::MAX buffers, aborting"),
-            &self.ids[id],
-        )
+        (id, &self.ids[id as usize])
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Scheduler<'a> {
-    graph: &'a Graph,
-    order: Vec<NodeID>,
-    intermediate: HashMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)>,
+pub struct Scheduler<'a, N, I, O> {
+    graph: &'a Graph<N, I, O>,
+    order: Vec<N>,
+    intermediate: HashMap<N, IScheduleEntry<N, I, O>>,
 }
 
-impl Scheduler<'_> {
+impl<N, I, O> Scheduler<'_, N, I, O> {
     #[must_use]
-    pub fn intermediate(&self) -> &HashMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)> {
+    pub fn intermediate(&self) -> &HashMap<N, IScheduleEntry<N, I, O>> {
         &self.intermediate
     }
 
     #[must_use]
-    pub fn order(&self) -> &[NodeID] {
+    pub fn order(&self) -> &[N] {
         &self.order
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
-pub enum Task {
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Task<N, O> {
     Sum {
-        node_id: NodeID,
-        port_id: OutputID,
+        node_id: N,
+        port_id: O,
         index: usize,
     },
-    Node(NodeID),
+    Node(N),
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
-pub struct GraphSchedule<T = u64> {
-    pub num_buffers: usize,
-    pub node_io: HashMap<NodeID, NodeIO<T>>,
-    pub intermediate: HashMap<NodeID, (u64, HashMap<OutputID, Port<InputID>>)>,
-    pub tasks: Box<[Task]>,
+impl<N: fmt::Debug, O: fmt::Debug> fmt::Debug for Task<N, O> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Sum {
+                node_id,
+                port_id,
+                index,
+            } => write!(f, "Sum({node_id:?}, {port_id:?}, {index:?})"),
+            Self::Node(id) => write!(f, "Node({id:?})"),
+        }
+    }
 }
 
-impl<'a> Scheduler<'a> {
+#[derive(Clone, Debug)]
+pub struct IScheduleEntry<N, I, O> {
+    pub max_delay: u64,
+    pub outputs: HashMap<O, Port<N, I>>,
+}
+
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> PartialEq for IScheduleEntry<N, I, O> {
+    fn eq(&self, other: &Self) -> bool {
+        self.max_delay == other.max_delay && self.outputs == other.outputs
+    }
+}
+
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> Eq for IScheduleEntry<N, I, O> {}
+
+#[derive(Debug, Clone)]
+pub struct GraphSchedule<N, I, O> {
+    pub num_buffers: u32,
+    pub node_io: HashMap<N, NodeIO<N, I, O>>,
+    pub tasks: Box<[Task<N, O>]>,
+}
+
+impl<N, I, O> Default for GraphSchedule<N, I, O> {
+    fn default() -> Self {
+        Self {
+            num_buffers: 0,
+            node_io: HashMap::default(),
+            tasks: Box::default(),
+        }
+    }
+}
+
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> PartialEq for GraphSchedule<N, I, O> {
+    fn eq(&self, other: &Self) -> bool {
+        self.num_buffers == other.num_buffers
+            && self.node_io == other.node_io
+            && self.tasks == other.tasks
+    }
+}
+
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> Eq for GraphSchedule<N, I, O> {}
+
+impl<'a, N, I, O> Scheduler<'a, N, I, O> {
     #[inline]
-    pub(crate) fn for_graph(graph: &'a Graph) -> Self {
+    pub(crate) fn for_graph(graph: &'a Graph<N, I, O>) -> Self {
         Self {
             graph,
             intermediate: HashMap::default(),
             order: Vec::new(),
         }
     }
+}
 
-    pub fn add_sink_node(&mut self, index: &NodeID) {
-        if self.intermediate.contains_key(index) {
+impl<N, I, O> Scheduler<'_, N, I, O>
+where
+    N: Hash + Eq + Clone,
+    I: Hash + Eq + Clone,
+    O: Hash + Eq + Clone,
+{
+    pub fn add_sink_node(&mut self, index: N) {
+        if self.intermediate.contains_key(&index) {
             return;
         }
 
         let mut max_input_lat = 0;
 
-        for (dest_port_id, dest_port) in self.graph[index].input_ports() {
+        for (dest_port_id, dest_port) in self.graph.get_node(&index).unwrap().input_ports() {
             for (source_node_id, source_port_ids) in dest_port.connections() {
-                self.add_sink_node(source_node_id);
+                self.add_sink_node(source_node_id.clone());
 
-                let (source_node_input_lat, source_node_outputs) =
-                    self.intermediate.get_mut(source_node_id).unwrap();
+                let IScheduleEntry {
+                    max_delay: source_node_input_lat,
+                    outputs: source_node_outputs,
+                } = self.intermediate.get_mut(source_node_id).unwrap();
 
                 for source_port_id in source_port_ids {
                     source_node_outputs
-                        .entry(*source_port_id)
+                        .entry(source_port_id.clone())
                         .or_default()
-                        .insert_connection(*index, *dest_port_id);
+                        .insert_connection(index.clone(), dest_port_id.clone());
 
-                    let source_port_lat =
-                        self.graph[source_node_id].output_latencies()[source_port_id];
+                    let source_port_lat = self
+                        .graph
+                        .get_node(source_node_id)
+                        .unwrap()
+                        .output_latencies()[source_port_id];
                     let source_port_total_lat = *source_node_input_lat + source_port_lat;
 
                     max_input_lat = max_input_lat.max(source_port_total_lat);
@@ -161,19 +236,27 @@ impl<'a> Scheduler<'a> {
             }
         }
 
+        self.order.push(index.clone());
+
         assert!(
             self.intermediate
-                .insert(*index, (max_input_lat, HashMap::default()))
+                .insert(
+                    index.clone(),
+                    IScheduleEntry {
+                        max_delay: max_input_lat,
+                        outputs: HashMap::default()
+                    }
+                )
                 .is_none()
         );
     }
 
-    pub fn compile_map_delays<T>(self, mut f: impl FnMut(u64) -> T) -> GraphSchedule<T> {
+    pub fn compile(&self) -> GraphSchedule<N, I, O> {
         let mut allocator = BufferAllocator::default();
 
-        let mut claims = HashMap::<_, HashMap<_, _>>::default();
+        let mut claims = HashMap::<N, HashMap<I, (Rc<()>, Source<N, O>)>>::default();
 
-        let mut node_io = HashMap::default();
+        let mut io = HashMap::<N, NodeIO<N, I, O>>::default();
 
         let mut tasks = vec![];
 
@@ -183,12 +266,15 @@ impl<'a> Scheduler<'a> {
             order,
         } = self;
 
-        for id in &order {
-            let (&node_id, (max_input_lat, node_outputs)) = intermediate.get_key_value(id).unwrap();
+        for node_id in order {
+            let IScheduleEntry {
+                max_delay: max_input_lat,
+                outputs: node_outputs,
+            } = &intermediate[node_id];
 
-            tasks.push(Task::Node(node_id));
+            tasks.push(Task::Node(node_id.clone()));
 
-            let node_output_lats = graph[&node_id].output_latencies();
+            let node_output_lats = graph.get_node(node_id).unwrap().output_latencies();
 
             let mut inputs = HashMap::default();
             let mut outputs = HashMap::default();
@@ -197,7 +283,7 @@ impl<'a> Scheduler<'a> {
 
             // for every (actually used) output of this node
 
-            for (&source_port_id, source_port) in node_outputs {
+            for (source_port_id, source_port) in node_outputs {
                 let connections = source_port.connections();
                 if connections.is_empty() {
                     continue;
@@ -206,36 +292,36 @@ impl<'a> Scheduler<'a> {
                 // allocate a buffer for it
                 let (id, handle_ref) = allocator.find_free_buffer();
 
-                let source_total_lat = max_input_lat + node_output_lats[&source_port_id];
+                let source_total_lat = max_input_lat + node_output_lats[source_port_id];
                 let mut max_delay = 0;
 
                 let mut repeats = HashMap::default();
 
-                for (&dest_node_id, dest_port_ids) in connections {
+                for (dest_node_id, dest_port_ids) in connections {
                     let mut prev_assigned_ports = HashMap::default();
 
                     // find the maximum delay it will be subjected to
-                    let delay = intermediate[&dest_node_id].0 - source_total_lat;
+                    let delay = intermediate[dest_node_id].max_delay - source_total_lat;
                     max_delay = max_delay.max(delay);
 
                     // assign the buffer to all recieveing ports, and keep track of ports
                     // that have already been assigned a buffer
-                    for &dest_port_id in dest_port_ids {
+                    for dest_port_id in dest_port_ids {
                         let handle = Rc::clone(handle_ref);
 
                         if claims
-                            .get(&dest_node_id)
-                            .is_some_and(|map| map.contains_key(&dest_port_id))
+                            .get(dest_node_id)
+                            .is_some_and(|map| map.contains_key(dest_port_id))
                         {
                             prev_assigned_ports.insert(dest_port_id, (handle, delay));
                         } else {
-                            claims.entry(dest_node_id).or_default().insert(
-                                dest_port_id,
+                            claims.entry(dest_node_id.clone()).or_default().insert(
+                                dest_port_id.clone(),
                                 (
                                     handle,
-                                    InputBufferAssignment {
-                                        node: node_id,
-                                        port: source_port_id,
+                                    Source {
+                                        node: node_id.clone(),
+                                        port: source_port_id.clone(),
                                         kind: SourceType::Direct { delay },
                                     },
                                 ),
@@ -249,10 +335,10 @@ impl<'a> Scheduler<'a> {
                 repeat_assignees.insert(source_port_id, repeats);
 
                 outputs.insert(
-                    source_port_id,
-                    OutputBufferAssignment {
+                    source_port_id.clone(),
+                    Sink {
                         id,
-                        max_delay: f(max_delay),
+                        max_delay,
                         sum_tasks: Box::new([]),
                     },
                 );
@@ -263,21 +349,20 @@ impl<'a> Scheduler<'a> {
                 let mut sum_tasks = vec![];
 
                 for (dest_node_id, repeat_assignees) in repeat_assignees {
-                    let dest_node_claims = claims.get_mut(&dest_node_id).unwrap();
+                    let dest_node_claims = claims.get_mut(dest_node_id).unwrap();
 
                     for (dest_port_id, (other_old_handle, delay)) in repeat_assignees {
                         // we're not using insert directly to allow dropping
                         // {this, other}_old_handle early
 
-                        let (this_old_handle, lhs) =
-                            dest_node_claims.remove(&dest_port_id).unwrap();
+                        let (this_old_handle, lhs) = dest_node_claims.remove(dest_port_id).unwrap();
 
                         // because we can potentially reuse the input buffers if they have no latency
                         if delay == 0 {
                             drop(other_old_handle);
                         }
 
-                        if lhs.incoming_delay() == 0 {
+                        if lhs.kind.delay() == 0 {
                             drop(this_old_handle);
                         }
 
@@ -288,12 +373,12 @@ impl<'a> Scheduler<'a> {
                         assert!(
                             dest_node_claims
                                 .insert(
-                                    dest_port_id,
+                                    dest_port_id.clone(),
                                     (
                                         Rc::clone(new_handle_ref),
-                                        InputBufferAssignment {
-                                            node: node_id,
-                                            port: port_id,
+                                        Source {
+                                            node: node_id.clone(),
+                                            port: port_id.clone(),
                                             kind: SourceType::Sum { index },
                                         },
                                     ),
@@ -302,8 +387,8 @@ impl<'a> Scheduler<'a> {
                         );
 
                         tasks.push(Task::Sum {
-                            node_id,
-                            port_id,
+                            node_id: node_id.clone(),
+                            port_id: port_id.clone(),
                             index,
                         });
 
@@ -315,33 +400,27 @@ impl<'a> Scheduler<'a> {
                     }
                 }
 
-                outputs.get_mut(&port_id).unwrap().sum_tasks = sum_tasks.into_boxed_slice();
+                outputs.get_mut(port_id).unwrap().sum_tasks = sum_tasks.into_boxed_slice();
             }
 
             for (dest_port_id, (_handle, source)) in claims
-                .get_mut(&node_id)
+                .get_mut(node_id)
                 .into_iter()
                 .flat_map(HashMap::drain)
             {
-                insert_new(&mut inputs, dest_port_id, source);
+                insert_new(&mut inputs, dest_port_id.clone(), source);
             }
 
             assert!(
-                node_io
-                    .insert(node_id, NodeIO { inputs, outputs })
+                io.insert(node_id.clone(), NodeIO { inputs, outputs })
                     .is_none()
             );
         }
 
         GraphSchedule {
             num_buffers: allocator.len(),
-            node_io,
-            intermediate,
+            node_io: io,
             tasks: tasks.into_boxed_slice(),
         }
-    }
-
-    pub fn compile(self) -> GraphSchedule {
-        self.compile_map_delays(convert::identity)
     }
 }

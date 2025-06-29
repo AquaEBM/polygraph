@@ -1,106 +1,36 @@
 use super::*;
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
-#[repr(transparent)]
-pub struct InputID(NonZeroU32);
-
-impl fmt::Debug for InputID {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
-    }
-}
-
-impl InputID {
-    #[inline]
-    pub(crate) fn new_key(map: &HashMap<Self, impl Sized>) -> Self {
-        let mut id = Self(NonZeroU32::MIN);
-
-        while map.contains_key(&id) {
-            id.0 = id.0.checked_add(1).expect("Index overflow");
-        }
-
-        id
-    }
-}
-
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
-#[repr(transparent)]
-pub struct OutputID(NonZeroU32);
-
-impl fmt::Debug for OutputID {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
-    }
-}
-
-impl OutputID {
-    #[inline]
-    pub(crate) fn new_key(map: &HashMap<Self, impl Sized>) -> Self {
-        let mut id = Self(NonZeroU32::MIN);
-
-        while map.contains_key(&id) {
-            id.0 = id.0.checked_add(1).expect("Index overflow");
-        }
-
-        id
-    }
-}
-
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
-#[repr(transparent)]
-pub struct NodeID(NonZeroU32);
-
-impl fmt::Debug for NodeID {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
-    }
-}
-
-impl NodeID {
-    #[inline]
-    pub(crate) fn new_key(map: &HashMap<Self, impl Sized>) -> Self {
-        let mut id = Self(NonZeroU32::MIN);
-
-        while map.contains_key(&id) {
-            id.0 = id.0.checked_add(1).expect("Index overflow");
-        }
-
-        id
-    }
-}
-
 #[derive(Clone)]
-pub struct Port<P = OutputID>(HashMap<NodeID, HashSet<P>>);
+pub struct Port<N, O>(HashMap<N, HashSet<O>>);
 
-impl<P: fmt::Debug> fmt::Debug for Port<P> {
+impl<N: fmt::Debug, O: fmt::Debug> fmt::Debug for Port<N, O> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
+        f.write_str("Port(")?;
+        fmt::Debug::fmt(&self.0, f)?;
+        f.write_str(")")
     }
 }
 
-impl<P: Hash + Eq> PartialEq for Port<P> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<P> Default for Port<P> {
+impl<N, O> Default for Port<N, O> {
     fn default() -> Self {
         Self(HashMap::default())
     }
 }
 
-impl<P: Hash + Eq> Eq for Port<P> {}
-
-impl<P> Port<P> {
-    #[inline]
-    #[must_use]
-    pub fn connections(&self) -> &HashMap<NodeID, HashSet<P>> {
-        &self.0
+impl<N: Hash + Eq, O: Hash + Eq> PartialEq for Port<N, O> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
     }
 }
 
-impl<P> Port<P> {
+impl<N: Hash + Eq, O: Hash + Eq> Eq for Port<N, O> {}
+
+impl<N, O> Port<N, O> {
+    #[inline]
+    #[must_use]
+    pub fn connections(&self) -> &HashMap<N, HashSet<O>> {
+        &self.0
+    }
     #[inline]
     pub fn len(&self) -> usize {
         self.0.values().map(HashSet::len).sum()
@@ -113,21 +43,27 @@ impl<P> Port<P> {
     }
 
     #[inline]
-    pub fn iter_connections(&self) -> impl Iterator<Item = (&NodeID, &P)> {
+    pub fn iter_connections(&self) -> impl Iterator<Item = (&N, &O)> {
         self.0
             .iter()
             .flat_map(|(node_id, ports)| ports.iter().map(move |port| (node_id, port)))
     }
 }
 
-impl<P: Hash + Eq> Port<P> {
+impl<N: Hash + Eq, O: Hash + Eq> Port<N, O> {
     #[inline]
-    pub(crate) fn insert_connection(&mut self, node_index: NodeID, port_index: P) -> bool {
+    pub(crate) fn insert_connection(&mut self, node_index: N, port_index: O) -> bool {
         self.0.entry(node_index).or_default().insert(port_index)
     }
 
     #[inline]
-    pub fn remove_port(&mut self, node_index: &NodeID, port_index: &P) -> bool {
+    pub fn remove_port<Q, R>(&mut self, node_index: &Q, port_index: &R) -> bool
+    where 
+        Q: ?Sized + Hash + Eq,
+        R: ?Sized + Hash + Eq,
+        N: borrow::Borrow<Q>,
+        O: borrow::Borrow<R>,
+    {
         let mut empty = false;
 
         let tmp = self.0.get_mut(node_index).is_some_and(|ports| {
