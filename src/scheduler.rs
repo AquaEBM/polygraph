@@ -42,7 +42,7 @@ pub struct SumTask<N, O> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sink<N, O> {
-    pub id: u32,
+    pub buf_id: u32,
     pub max_delay: u64,
     pub sum_tasks: Box<[SumTask<N, O>]>,
 }
@@ -91,7 +91,7 @@ impl BufferAllocator {
             .iter()
             .enumerate()
             .find(|(_, claims)| Rc::strong_count(claims) == 1)
-            .map(|(id, _)| id as u32)
+            .map(|(id, _)| id.try_into().unwrap())
             .unwrap_or_else(|| {
                 let new_id = self.len();
                 self.ids.push(Rc::new(()));
@@ -162,7 +162,7 @@ impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> Eq for IScheduleEntry<N, I, O> {}
 pub struct GraphSchedule<N, I, O> {
     pub num_buffers: u32,
     pub node_io: HashMap<N, NodeIO<N, I, O>>,
-    pub tasks: Box<[Task<N, O>]>,
+    pub tasks: Vec<Task<N, O>>,
 }
 
 impl<N, I, O> Default for GraphSchedule<N, I, O> {
@@ -170,7 +170,7 @@ impl<N, I, O> Default for GraphSchedule<N, I, O> {
         Self {
             num_buffers: 0,
             node_io: HashMap::default(),
-            tasks: Box::default(),
+            tasks: Vec::default(),
         }
     }
 }
@@ -241,7 +241,7 @@ where
         assert!(
             self.intermediate
                 .insert(
-                    index.clone(),
+                    index,
                     IScheduleEntry {
                         max_delay: max_input_lat,
                         outputs: HashMap::default()
@@ -256,7 +256,7 @@ where
 
         let mut claims = HashMap::<N, HashMap<I, (Rc<()>, Source<N, O>)>>::default();
 
-        let mut io = HashMap::<N, NodeIO<N, I, O>>::default();
+        let mut node_io = HashMap::<N, NodeIO<N, I, O>>::default();
 
         let mut tasks = vec![];
 
@@ -290,7 +290,7 @@ where
                 }
 
                 // allocate a buffer for it
-                let (id, handle_ref) = allocator.find_free_buffer();
+                let (buf_id, handle_ref) = allocator.find_free_buffer();
 
                 let source_total_lat = max_input_lat + node_output_lats[source_port_id];
                 let mut max_delay = 0;
@@ -337,7 +337,7 @@ where
                 outputs.insert(
                     source_port_id.clone(),
                     Sink {
-                        id,
+                        buf_id,
                         max_delay,
                         sum_tasks: Box::new([]),
                     },
@@ -412,15 +412,15 @@ where
             }
 
             assert!(
-                io.insert(node_id.clone(), NodeIO { inputs, outputs })
+                node_io.insert(node_id.clone(), NodeIO { inputs, outputs })
                     .is_none()
             );
         }
 
         GraphSchedule {
             num_buffers: allocator.len(),
-            node_io: io,
-            tasks: tasks.into_boxed_slice(),
+            node_io,
+            tasks,
         }
     }
 }
