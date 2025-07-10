@@ -28,26 +28,26 @@ impl<N, O> InputSource<N, O> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OutputBuf {
+pub struct OutputBuf<T = u64> {
     pub buf_id: u32,
-    pub max_delay: u64,
+    pub max_delay: T,
 }
 
 #[derive(Clone, Debug)]
-pub struct NodeIO<N, I, O> {
+pub struct NodeIO<N, I, O, T = u64> {
     pub inputs: HashMap<I, InputSource<N, O>>,
-    pub outputs: HashMap<O, OutputBuf>,
+    pub outputs: HashMap<O, OutputBuf<T>>,
 }
 
-impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> PartialEq for NodeIO<N, I, O> {
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq, T: PartialEq> PartialEq for NodeIO<N, I, O, T> {
     fn eq(&self, other: &Self) -> bool {
         self.inputs == other.inputs && self.outputs == other.outputs
     }
 }
 
-impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> Eq for NodeIO<N, I, O> {}
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq, T: Eq> Eq for NodeIO<N, I, O, T> {}
 
-impl<N, I, O> Default for NodeIO<N, I, O> {
+impl<N, I, O, T> Default for NodeIO<N, I, O, T> {
     fn default() -> Self {
         Self {
             inputs: HashMap::default(),
@@ -88,6 +88,20 @@ impl BufferAllocator {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct UsedNode<N, I, O> {
+    pub max_delay: u64,
+    pub used_outputs: HashMap<O, Port<N, I>>,
+}
+
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> PartialEq for UsedNode<N, I, O> {
+    fn eq(&self, other: &Self) -> bool {
+        self.max_delay == other.max_delay && self.used_outputs == other.used_outputs
+    }
+}
+
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> Eq for UsedNode<N, I, O> {}
+
 #[derive(Debug, Clone)]
 pub struct Scheduler<'a, N, I, O> {
     graph: &'a Graph<N, I, O>,
@@ -103,7 +117,7 @@ impl<N, I, O> Scheduler<'_, N, I, O> {
 
     #[must_use]
     pub fn order(&self) -> &[N] {
-        &self.order
+        self.order.as_slice()
     }
 }
 
@@ -122,20 +136,6 @@ impl<N: fmt::Debug> fmt::Debug for Task<N> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct UsedNode<N, I, O> {
-    pub max_delay: u64,
-    pub used_outputs: HashMap<O, Port<N, I>>,
-}
-
-impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> PartialEq for UsedNode<N, I, O> {
-    fn eq(&self, other: &Self) -> bool {
-        self.max_delay == other.max_delay && self.used_outputs == other.used_outputs
-    }
-}
-
-impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> Eq for UsedNode<N, I, O> {}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SumNode<N, O> {
     pub summands: [InputSource<N, O>; 2],
@@ -143,14 +143,14 @@ pub struct SumNode<N, O> {
 }
 
 #[derive(Debug, Clone)]
-pub struct GraphSchedule<N, I, O> {
+pub struct GraphSchedule<N, I, O, T = u64> {
     pub num_buffers: u32,
-    pub node_io: HashMap<N, NodeIO<N, I, O>>,
+    pub node_io: HashMap<N, NodeIO<N, I, O, T>>,
     pub sum_nodes: Vec<SumNode<N, O>>,
     pub tasks: Vec<Task<N>>,
 }
 
-impl<N, I, O> Default for GraphSchedule<N, I, O> {
+impl<N, I, O, T> Default for GraphSchedule<N, I, O, T> {
     fn default() -> Self {
         Self {
             num_buffers: 0,
@@ -161,7 +161,9 @@ impl<N, I, O> Default for GraphSchedule<N, I, O> {
     }
 }
 
-impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> PartialEq for GraphSchedule<N, I, O> {
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq, T: PartialEq> PartialEq
+    for GraphSchedule<N, I, O, T>
+{
     fn eq(&self, other: &Self) -> bool {
         self.num_buffers == other.num_buffers
             && self.node_io == other.node_io
@@ -169,7 +171,7 @@ impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> PartialEq for GraphSchedule<N, I,
     }
 }
 
-impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> Eq for GraphSchedule<N, I, O> {}
+impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq, T: Eq> Eq for GraphSchedule<N, I, O, T> {}
 
 impl<'a, N, I, O> Scheduler<'a, N, I, O> {
     #[inline]
@@ -237,12 +239,12 @@ where
         );
     }
 
-    pub fn compile(&self) -> GraphSchedule<N, I, O> {
+    pub fn compile_map_delays<T>(&self, f: impl Fn(u64) -> T) -> GraphSchedule<N, I, O, T> {
         let mut allocator = BufferAllocator::default();
 
         let mut claims = HashMap::<N, HashMap<I, (Rc<()>, InputSource<N, O>)>>::default();
 
-        let mut node_io = HashMap::<N, NodeIO<N, I, O>>::default();
+        let mut node_io = HashMap::<N, NodeIO<N, I, O, T>>::default();
 
         let mut sum_nodes = Vec::default();
 
@@ -322,7 +324,13 @@ where
 
                 repeat_assignees.insert(source_port_id, repeats);
 
-                outputs.insert(source_port_id.clone(), OutputBuf { buf_id, max_delay });
+                outputs.insert(
+                    source_port_id.clone(),
+                    OutputBuf {
+                        buf_id,
+                        max_delay: f(max_delay),
+                    },
+                );
             }
 
             // handle repeat assignments
@@ -394,5 +402,9 @@ where
             sum_nodes,
             tasks,
         }
+    }
+
+    pub fn compile(&self) -> GraphSchedule<N, I, O> {
+        self.compile_map_delays(|x| x)
     }
 }
