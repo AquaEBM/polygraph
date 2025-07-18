@@ -1,5 +1,5 @@
 use super::*;
-use core::{array, ops::Not};
+use core::array;
 
 fn insert_success<N, I, O, Q, R>(graph: &mut Graph<N, I, O>, from: (N, O), to: (&Q, &R))
 where
@@ -34,7 +34,7 @@ fn basic_cycle() {
     assert!(
         graph
             .try_insert_edge_acyclic((node1_id, node1_output_id), (node1_id, node1_input_id))
-            .is_err_and(|i| i)
+            .unwrap_err()
     )
 }
 
@@ -64,9 +64,9 @@ fn insert_redundant_edge() {
         (node2_id, node2_input_id),
     );
     assert!(
-        graph
+        !graph
             .try_insert_edge_acyclic((node1_id, node1_output_id), (node2_id, node2_input_id))
-            .is_ok_and(Not::not)
+            .unwrap()
     );
 }
 
@@ -109,8 +109,16 @@ fn chain() {
     let mut source = Node::default();
     let source_id = "source";
     let source_output_id = "source_output";
+    let unused_source_output_id = "unused_source_output";
     source.add_output_with_latency(source_output_id, 4);
+    source.add_output_with_latency(unused_source_output_id, 4);
     graph.insert_node(source_id, source);
+
+    let mut unused_sink = Node::default();
+    let unused_sink_id = "unused_sink";
+    let unused_sink_input_id = "unused_sink_input";
+    unused_sink.add_input(unused_sink_input_id);
+    graph.insert_node(unused_sink_id, unused_sink);
 
     let mut int1 = Node::default();
     let int1_id = "int1";
@@ -134,6 +142,21 @@ fn chain() {
     sink.add_input(sink_input_id);
     graph.insert_node(sink_id, sink);
 
+    // unused edges ---
+
+    insert_success(
+        &mut graph,
+        (source_id, source_output_id),
+        (unused_sink_id, unused_sink_input_id),
+    );
+    insert_success(
+        &mut graph,
+        (source_id, unused_source_output_id),
+        (unused_sink_id, unused_sink_input_id),
+    );
+
+    // ---
+
     insert_success(
         &mut graph,
         (source_id, source_output_id),
@@ -156,7 +179,6 @@ fn chain() {
 
     let schedule = scheduler.compile();
 
-    println!("{graph:#?}");
     println!("{schedule:#?}");
     println!("{:#?}", scheduler.intermediate());
 }

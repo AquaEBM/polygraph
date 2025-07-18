@@ -27,21 +27,33 @@ impl<N, O> InputSource<N, O> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OutputBuf<T = u64> {
+#[derive(Clone, Debug)]
+pub struct NodeOutput<N, O, T = u64> {
     pub buf_id: u32,
     pub max_delay: T,
+    pub connections: Port<N, O>,
 }
+
+impl<N: Hash + Eq, O: Hash + Eq, T: PartialEq> PartialEq for NodeOutput<N, O, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.buf_id == other.buf_id
+            && self.max_delay == other.max_delay
+            && self.connections == other.connections
+    }
+}
+
+impl<N: Hash + Eq, O: Hash + Eq, T: Eq> Eq for NodeOutput<N, O, T> {}
 
 #[derive(Clone, Debug)]
 pub struct NodeIO<N, I, O, T = u64> {
-    pub inputs: HashMap<I, InputSource<N, O>>,
-    pub outputs: HashMap<O, OutputBuf<T>>,
+    pub max_delay: u64,
+    pub inputs: HashMap<I, Option<InputSource<N, O>>>,
+    pub outputs: HashMap<O, Option<NodeOutput<N, O, T>>>,
 }
 
 impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq, T: PartialEq> PartialEq for NodeIO<N, I, O, T> {
     fn eq(&self, other: &Self) -> bool {
-        self.inputs == other.inputs && self.outputs == other.outputs
+        self.max_delay == other.max_delay && self.inputs == other.inputs && self.outputs == other.outputs
     }
 }
 
@@ -50,6 +62,7 @@ impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq, T: Eq> Eq for NodeIO<N, I, O, T> 
 impl<N, I, O, T> Default for NodeIO<N, I, O, T> {
     fn default() -> Self {
         Self {
+            max_delay: 0,
             inputs: HashMap::default(),
             outputs: HashMap::default(),
         }
@@ -64,10 +77,7 @@ pub(crate) struct BufferAllocator {
 impl BufferAllocator {
     #[inline]
     pub(crate) fn len(&self) -> u32 {
-        self.ids
-            .len()
-            .try_into()
-            .expect("more than u32::MAX buffers, aborting")
+        self.ids.len().try_into().unwrap()
     }
 
     #[inline]
@@ -76,9 +86,9 @@ impl BufferAllocator {
         let id = self
             .ids
             .iter()
-            .enumerate()
-            .find(|(_, claims)| Rc::strong_count(claims) == 1)
-            .map_or(len, |(id, _)| id.try_into().unwrap());
+            .zip(0u32..)
+            .find(|(claims, _)| Rc::strong_count(claims) == 1)
+            .map_or(len, |(_, id)| id);
 
         if id == len {
             self.ids.push(Rc::new(()));
@@ -103,17 +113,13 @@ impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> PartialEq for UsedNode<N, I, O> {
 impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq> Eq for UsedNode<N, I, O> {}
 
 #[derive(Debug, Clone)]
-pub struct Scheduler<'a, N, I, O> {
+pub struct Scheduler<'a, N, I, O, T = u64> {
     graph: &'a Graph<N, I, O>,
     order: Vec<N>,
-    intermediate: HashMap<N, UsedNode<N, I, O>>,
+    node_io: HashMap<N, NodeIO<N, I, O, T>>,
 }
 
-impl<N, I, O> Scheduler<'_, N, I, O> {
-    #[must_use]
-    pub fn intermediate(&self) -> &HashMap<N, UsedNode<N, I, O>> {
-        &self.intermediate
-    }
+impl<N, I, O, T> Scheduler<'_, N, I, O, T> {
 
     #[must_use]
     pub fn order(&self) -> &[N] {
@@ -173,25 +179,25 @@ impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq, T: PartialEq> PartialEq
 
 impl<N: Hash + Eq, I: Hash + Eq, O: Hash + Eq, T: Eq> Eq for GraphSchedule<N, I, O, T> {}
 
-impl<'a, N, I, O> Scheduler<'a, N, I, O> {
+impl<'a, N, I, O, T> Scheduler<'a, N, I, O, T> {
     #[inline]
     pub(crate) fn for_graph(graph: &'a Graph<N, I, O>) -> Self {
         Self {
             graph,
-            intermediate: HashMap::default(),
+            node_io: HashMap::default(),
             order: Vec::new(),
         }
     }
 }
 
-impl<N, I, O> Scheduler<'_, N, I, O>
+impl<N, I, O, T> Scheduler<'_, N, I, O, T>
 where
     N: Hash + Eq + Clone,
     I: Hash + Eq + Clone,
     O: Hash + Eq + Clone,
 {
     pub fn add_sink_node(&mut self, index: N) {
-        if self.intermediate.contains_key(&index) {
+        if self.node_io.contains_key(&index) {
             return;
         }
 
@@ -201,10 +207,10 @@ where
             for (source_node_id, source_port_ids) in dest_port.connections() {
                 self.add_sink_node(source_node_id.clone());
 
-                let UsedNode {
+                let NodeIO {
                     max_delay: source_node_input_lat,
-                    used_outputs: source_node_outputs,
-                } = self.intermediate.get_mut(source_node_id).unwrap();
+                    outputs: source_node_outputs,
+                } = self.node_io.get_mut(source_node_id).unwrap();
 
                 for source_port_id in source_port_ids {
                     source_node_outputs
@@ -258,13 +264,15 @@ where
 
         for node_id in order {
             let UsedNode {
-                max_delay: max_input_lat,
-                used_outputs: node_outputs,
+                max_delay,
+                used_outputs,
             } = &intermediate[node_id];
 
             tasks.push(Task::Node(node_id.clone()));
 
-            let node_output_lats = graph.get_node(node_id).unwrap().output_latencies();
+            let graph_node = graph.get_node(node_id).unwrap();
+            let node_output_lats = graph_node.output_latencies();
+            let node_inputs = graph_node.input_ports();
 
             let mut inputs = HashMap::default();
             let mut outputs = HashMap::default();
@@ -273,16 +281,20 @@ where
 
             // for every (actually used) output of this node
 
-            for (source_port_id, source_port) in node_outputs {
-                let connections = source_port.connections();
-                if connections.is_empty() {
+            for (source_port_id, output_lat) in node_output_lats {
+                let Some(source_port) = used_outputs.get(source_port_id) else {
+                    outputs.insert(source_port_id.clone(), None);
                     continue;
-                }
+                };
+
+                // this is never empty
+                let connections = source_port.connections();
+                assert!(!connections.is_empty());
 
                 // allocate a buffer for it
                 let (buf_id, handle_ref) = allocator.find_free_buffer();
 
-                let source_total_lat = max_input_lat + node_output_lats[source_port_id];
+                let source_total_lat = max_delay + output_lat;
                 let mut max_delay = 0;
 
                 let mut repeats = HashMap::default();
@@ -326,10 +338,10 @@ where
 
                 outputs.insert(
                     source_port_id.clone(),
-                    OutputBuf {
+                    Some(NodeOutput {
                         buf_id,
                         max_delay: f(max_delay),
-                    },
+                    }),
                 );
             }
 
@@ -383,10 +395,11 @@ where
                 }
             }
 
-            for (dest_port_id, (_handle, source)) in
-                claims.get_mut(node_id).into_iter().flat_map(HashMap::drain)
-            {
-                insert_new(&mut inputs, dest_port_id.clone(), source);
+            if let Some(claimed) = claims.get_mut(node_id) {
+                for dest_port_id in node_inputs.keys() {
+                    let source = claimed.remove(dest_port_id).map(|(_handle, source)| source);
+                    insert_new(&mut inputs, dest_port_id.clone(), source);
+                }
             }
 
             assert!(
